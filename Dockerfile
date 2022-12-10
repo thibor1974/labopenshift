@@ -1,9 +1,19 @@
-FROM registry.access.redhat.com/ubi8/ubi-minimal@sha256:e83a3146aa8d34dccfb99097aa79a3914327942337890aa6f73911996a80ebb8
+FROM registry.access.redhat.com/ubi8:8.0
 
-LABEL description="a test from thib using apache"
+RUN dnf -y module enable nginx:1.20
+RUN dnf -y -q --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False install nginx
+RUN dnf -y -q clean all
 
-RUN echo "Hello from Dockerfile" > /usr/share/httpd/noindex/index.html
+ADD index.html /usr/share/nginx/html
 
-expose 80
+ADD nginxconf.sed /tmp/
+RUN sed -i -f /tmp/nginxconf.sed /etc/nginx/nginx.conf
 
-ENTRYPOINT ["httpd", "-D","FOREGROUND"]
+RUN touch /run/nginx.pid \
+  && chgrp -R 0 /var/log/nginx /run/nginx.pid \
+  && chmod -R g+rwx /var/log/nginx /run/nginx.pid
+
+EXPOSE 8080
+USER 1001
+
+CMD nginx -g "daemon off;"
