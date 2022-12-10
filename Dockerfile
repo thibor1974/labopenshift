@@ -2,9 +2,6 @@ FROM registry.access.redhat.com/ubi8/ubi-minimal@sha256:e83a3146aa8d34dccfb99097
 
 LABEL description="a test from thib using apache"
 
-RUN yum install -y httpd && \
-    yum clean all
-
 RUN echo "Hello from Dockerfile" > /usr/share/httpd/noindex/index.html
 
 expose 80
