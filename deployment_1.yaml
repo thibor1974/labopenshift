@@ -4,7 +4,7 @@ kind: Deployment
 metadata:
   labels:
     app: frontend-1
-  name: frontend-1
+  name: deployment-frontend-1
   namespace: dev-thib-1
 spec:
   replicas: 1
@@ -19,7 +19,7 @@ spec:
         app: frontend-1
     spec:
       containers:
-        - image: registry.ocp.lan:15443/lab/ubidebug:latest
+      - image: registry.ocp.lan:15443/lab/ubidebug:latest
         name: image1
 ---
 apiVersion: v1
