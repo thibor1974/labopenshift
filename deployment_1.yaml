@@ -4,7 +4,7 @@ kind: Deployment
 metadata:
   labels:
     app: frontend-1
-  name: deployment-frontend-1
+  name: depl-frontend-1
   namespace: dev-thib-1
 spec:
   replicas: 1
@@ -14,13 +14,12 @@ spec:
   strategy: {}
   template:
     metadata:
-      creationTimestamp: null
       labels:
         app: frontend-1
     spec:
       containers:
       - image: registry.ocp.lan:15443/lab/ubidebug:latest
-        name: image1
+        name: ubidebug
 ---
 apiVersion: v1
 kind: Service
@@ -49,5 +48,5 @@ spec:
     targetPort: 8080
   to:
     kind: Service
-    name: frontend-1
+    name: service-frontend-1
     weight: 100
