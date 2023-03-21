@@ -1,0 +1,52 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: frontend-2
+  name: depl-frontend-2
+  namespace: dev-thib-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-2
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: frontend-2
+    spec:
+      containers:
+      - image: registry.ocp.lan:15443/lab/ubidebug:latest
+        name: ubidebug
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: frontend-2
+  name: service-frontend-2
+  namespace: dev-thib-2
+spec:
+  ports:
+  - port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: frontend-2
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    app: frontend-2
+  name: frontend-2
+  namespace: dev-thib-2
+spec:
+  port:
+    targetPort: 8080
+  to:
+    kind: Service
+    name: service-frontend-2
+    weight: 100
