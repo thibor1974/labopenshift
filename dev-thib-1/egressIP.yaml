@@ -1,0 +1,11 @@
+apiVersion: k8s.ovn.org/v1
+kind: EgressIP
+metadata:
+  name: egress-project1
+spec:
+  egressIPs:
+  - 192.168.22.150
+  - 192.168.22.151
+  namespaceSelector:
+    matchLabels:
+      env: thib
