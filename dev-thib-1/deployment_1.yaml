@@ -32,7 +32,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: backend-11
+    app: backend-1
   name: depl-backend-1
   namespace: dev-thib-1
 spec:
