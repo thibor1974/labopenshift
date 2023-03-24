@@ -49,7 +49,35 @@ spec:
       containers:
       - image: registry.ocp.lan:15443/lab/ubidebug:latest
         name: ubidebug1
-
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: test-1
+  name: depl-test-1
+  namespace: dev-thib-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-1
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: test-1
+    spec:
+      containers:
+      - image: registry.ocp.lan:15443/lab/ubidebug:latest
+        name: ubitest1
+        volumeMounts:
+          - name: config-trusted-cabundle
+            mountPath: /tmp/toto/
+      volumes:
+      - name: config-trusted-cabundle
+        configMap:
+          name: config-trusted-cabundle
 ---
 apiVersion: v1
 kind: Service
