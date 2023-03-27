@@ -72,12 +72,18 @@ spec:
       - image: registry.ocp.lan:15443/lab/ubidebug:latest
         name: ubitest1
         volumeMounts:
-          - name: config-trusted-cabundle
-            mountPath: /tmp/toto/
+          - name: registry-ca 
+            mountPath: /etc/pki/ca-trust/source/anchors/
+          - name: openshift-service-ca
+            mountPath: /etc/pki/ca-trust/source/anchors/
       volumes:
-      - name: config-trusted-cabundle
+      - name: registry-ca
         configMap:
-          name: config-trusted-cabundle
+          name: registry-ca
+      - name: openshift-service-ca
+        configMap:
+          name: openshift-service-ca.crt
+
 ---
 apiVersion: v1
 kind: Service
