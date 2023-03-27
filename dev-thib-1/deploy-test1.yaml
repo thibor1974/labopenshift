@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: test-1
+  name: depl-test-1
+  namespace: dev-thib-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-1
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: test-1
+    spec:
+      containers:
+      - image: registry.ocp.lan:15443/lab/ubidebug:latest
+        name: ubitest1
+        volumeMounts:
+          - name: configmap-projected
+            mountPath: /etc/pki/ca-trust/source/anchors/
+            readOnly: true
+      volumes:
+      - name: configmap-projected
+        projected:
+          sources:
+            - configMap:
+                name: registry-ca
+                name: openshift-service-ca.crt

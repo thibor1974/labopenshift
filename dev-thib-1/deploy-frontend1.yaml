@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: frontend-1
+  name: depl-frontend-1
+  namespace: dev-thib-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-1
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: frontend-1
+    spec:
+      containers:
+      - image: registry.ocp.lan:15443/lab/ubidebug:latest
+        name: ubidebug
+        volumeMounts:
+          - name: index-html-configmap-1
+            mountPath: /usr/share/nginx/html/
+      volumes:
+      - name: index-html-configmap-1
+        configMap:
+          name: index-html-configmap-1

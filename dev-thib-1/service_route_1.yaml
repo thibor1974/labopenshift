@@ -72,17 +72,16 @@ spec:
       - image: registry.ocp.lan:15443/lab/ubidebug:latest
         name: ubitest1
         volumeMounts:
-          - name: registry-ca 
+          - name: configmap-projected
             mountPath: /etc/pki/ca-trust/source/anchors/
-          - name: openshift-service-ca
-            mountPath: /etc/pki/ca-trust/source/anchors/
+            readOnly: true
       volumes:
-      - name: registry-ca
-        configMap:
-          name: registry-ca
-      - name: openshift-service-ca
-        configMap:
-          name: openshift-service-ca.crt
+      - name: configmap-projected
+        projected:
+          sources:
+            - configMap:
+                name: registry-ca
+                name: openshift-service-ca.crt
 
 ---
 apiVersion: v1

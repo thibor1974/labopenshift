@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: backend-1
+  name: depl-backend-1
+  namespace: dev-thib-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-1
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: backend-1
+    spec:
+      containers:
+      - image: registry.ocp.lan:15443/lab/ubidebug:latest
+        name: ubidebug1
