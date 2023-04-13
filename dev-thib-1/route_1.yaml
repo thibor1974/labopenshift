@@ -1,0 +1,15 @@
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    app: frontend-1
+  name: frontend-1
+  namespace: dev-thib-1
+spec:
+  port:
+    targetPort: 8080
+  to:
+    kind: Service
+    name: service-frontend-1
+    weight: 100
