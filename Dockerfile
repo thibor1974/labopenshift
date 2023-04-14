@@ -1,7 +1,7 @@
 FROM registry.access.redhat.com/ubi8:latest
 
-RUN dnf -y install nmap iproute openssh-clients openssh-server iputils procps-ng
-RUN dnf -y module enable nginx:1.20
+RUN dnf -y install nmap iproute openssh-clients openssh-server iputils procps-ng php
+RUN dnf -y module enable nginx:1.14
 RUN dnf -y -q --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False install nginx
 RUN dnf -y -q clean all
 

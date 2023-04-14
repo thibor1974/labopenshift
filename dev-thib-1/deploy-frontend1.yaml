@@ -17,7 +17,7 @@ spec:
         app: frontend-1
     spec:
       containers:
-      - image: registry.ocp.lan:15443/lab/ubidebug:latest
+      - image: registry.ocp.lan:15443/lab/ubidebug:2.0
         name: ubidebug
         volumeMounts:
           - name: index-html-configmap-1
