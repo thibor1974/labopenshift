@@ -6,7 +6,7 @@ metadata:
   name: depl-frontend-1
   namespace: dev-thib-1
 spec:
-  replicas: 1
+  replicas: 5
   selector:
     matchLabels:
       app: frontend-1
