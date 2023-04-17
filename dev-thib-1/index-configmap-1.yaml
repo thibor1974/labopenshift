@@ -5,9 +5,8 @@ metadata:
   namespace: dev-thib-1
 data:
   index.html: |
-    <!DOCTYPE html>
-      <html>
-       <body>
-         <p><?php echo "hostname is:".gethostname(); ?></p>
-       </body>
+    <html>
+    <h1>Welcome</h1>
+    </br>
+    <h1>Hi! from dev-thib-1 </h1>
     </html>
