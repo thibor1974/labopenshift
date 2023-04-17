@@ -6,20 +6,14 @@ metadata:
   name: service-eip-frontend-1
   namespace: dev-thib-1
 spec:
-  externalIPs:
-  - 192.168.22.205
-  - 192.168.22.204
   externalTrafficPolicy: Cluster
+  externalIPs:
+  - 192.168.22.1
   ports:
-  - nodePort: 31786
+  - nodePort: 32000
     port: 8080
     protocol: TCP
     targetPort: 8080
   selector:
     app: frontend-1
   type: LoadBalancer
-status:
-  loadBalancer:
-    ingress:
-    - ip: 192.168.22.205
-    - ip: 192.168.22.204
