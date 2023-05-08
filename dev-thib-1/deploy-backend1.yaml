@@ -17,5 +17,5 @@ spec:
         app: backend-1
     spec:
       containers:
-      - image: registry.ocp.lan:15443/lab/ubidebug:latest
+      - image: registry.ocp.lan:15443/lab/ubidebug:3.0
         name: ubidebug1

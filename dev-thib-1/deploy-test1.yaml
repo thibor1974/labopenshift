@@ -17,7 +17,7 @@ spec:
         app: test-1
     spec:
       containers:
-      - image: registry.ocp.lan:15443/lab/ubidebug:latest
+      - image: registry.ocp.lan:15443/lab/ubidebug:3.0
         name: ubitest1
         volumeMounts:
           - name: configmap-projected
