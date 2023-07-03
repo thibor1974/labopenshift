@@ -5,6 +5,7 @@ metadata:
 spec:
   egressIPs:
   - 192.168.22.210
+  - 192.168.22.211
   namespaceSelector:
     matchLabels:
       env: thib
