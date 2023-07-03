@@ -8,4 +8,4 @@ spec:
   - 192.168.22.211
   namespaceSelector:
     matchLabels:
-      env: dev-thib-1
+      env: thib
