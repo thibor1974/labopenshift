@@ -36,7 +36,7 @@ metadata:
   name: depl-backend-2
   namespace: dev-thib-2
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app: backend-2
