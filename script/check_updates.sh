@@ -4,7 +4,7 @@
 responsefile=$1
 osh_version=$2
 file=$3
-cat ${responsefile} | while read catalog packagfe channel
+cat ${responsefile} | while read catalog package channel
 do 
 	version=$(oc-mirror list operators --catalog=registry.redhat.io/redhat/${catalog}:${osh_version} --package=${package} --channel=${channel})
 	echo ${catalog}:${osh_version} ${package} ${channel} ${version} >> ${file}
