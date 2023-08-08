@@ -3,8 +3,9 @@
 # create an ouput to a date file 
 responsefile=$1
 osh_version=$2
+file=$3
 cat ${responsefile} | while read catalog packagfe channel
 do 
 	version=$(oc-mirror list operators --catalog=registry.redhat.io/redhat/${catalog}:${osh_version} --package=${package} --channel=${channel})
-	echo ${version}
+	echo ${catalog}:${osh_version} ${package} ${channel} ${version} >> ${file}
 done
