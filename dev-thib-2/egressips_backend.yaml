@@ -1,0 +1,10 @@
+apiVersion: k8s.ovn.org/v1
+kind: EgressIP
+metadata:
+  name: egress-dev-thib-2
+spec:
+  egressIPs:
+  - 192.168.22.211
+  namespaceSelector:
+    matchLabels:
+      env: thib2
