@@ -1,0 +1,12 @@
+redhat-operator-index:v4.11
+certified-operator-index:v4.11
+redhat-marketplace-index:v4.11
+community-operator-index:v4.11
+redhat-operator-index:v4.12
+certified-operator-index:v4.12
+redhat-marketplace-index:v4.12
+community-operator-index:v4.12
+redhat-operator-index:v4.13
+certified-operator-index:v4.13
+redhat-marketplace-index:v4.13
+community-operator-index:v4.13

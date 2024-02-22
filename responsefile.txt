@@ -1,0 +1,9 @@
+certified-operator-index nutanixcsioperator stable
+redhat-operator-index openshift-gitops-operator latest
+redhat-operator-index openshift-pipelines-operator-rh latest
+redhat-operator-index cincinnati-operator v1
+redhat-operator-index compliance-operator stable
+redhat-operator-index metallb-operator stable
+redhat-operator-index rhacs-operator stable
+redhat-operator-index cluster-logging stable
+redhat-marketplace-index falcon-operator-rhmp certified-0.8
