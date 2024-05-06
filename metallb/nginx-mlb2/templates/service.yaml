@@ -1,0 +1,27 @@
+apiVersion: v1
+items:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: nginx
+    name: nginx
+    namespace: {{ .Values.namespace.name }}
+  spec:
+    externalTrafficPolicy: Cluster
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    loadBalancerIP: {{ .Values.loadbalancer.ip }}
+    ports:
+    - port: 8080
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      app: nginx
+    sessionAffinity: None
+    type: LoadBalancer
+kind: List
+metadata:
+ resourceVersion: ""

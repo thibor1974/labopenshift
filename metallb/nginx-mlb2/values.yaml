@@ -1,0 +1,4 @@
+namespace:
+  name: tektutor3
+loadbalancer:
+  ip: "192.168.22.224"
