@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: scale-down
+  namespace: {{ .Values.namespace.name }}
+spec:
+  activeDeadlineSeconds: 300
+  backoffLimit: 5
+  completionMode: NonIndexed
+  completions: 1
+  parallelism: 1
+  suspend: false
+  template:
+    metadata:
+      labels:
+        batch.kubernetes.io/job-name: scale-down
+        job-name: scale-down
+    spec:
+      containers:
+      - command:
+        - /bin/bash
+        - -c
+        - |
+          date
+          echo "scaledown pod"
+          oc scale deploy/nginx --replicas=0
+        env:
+        - name: SLEEP
+          value: "5"
+        - name: LOOPCOUNT
+          value: "4"
+        image: registry.redhat.io/openshift4/ose-cli:v4.13.0-202405141537.p0.gd192e90.assembly.stream.el8
+        imagePullPolicy: Always
+        name: scale-down-pod
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: OnFailure
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: stasto
+      serviceAccountName: stasto
+      terminationGracePeriodSeconds: 30

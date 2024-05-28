@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scale-up-cron
+spec:
+  schedule: "* * * * *"  
+  concurrencyPolicy: "Replace" 
+  startingDeadlineSeconds: 200 
+  suspend: true            
+  successfulJobsHistoryLimit: 3 
+  failedJobsHistoryLimit: 1     
+  jobTemplate:             
+    spec:
+      template:
+        metadata:
+          labels:          
+            parent: "cronjob-scaleup"
+        spec:
+          serviceAccountName: stasto
+          containers:
+          - name: scale
+            image: registry.redhat.io/openshift4/ose-cli:v4.13.0-202405141537.p0.gd192e90.assembly.stream.el8
+            command: ["/bin/bash", "-c", "oc scale deploy/nginx --replicas=4"] 
+          restartPolicy: OnFailure 
