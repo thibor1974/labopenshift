@@ -27,11 +27,11 @@ spec:
         imagePullPolicy: IfNotPresent
         resources: 
           requests:
-            memory: "100Mi"
-            cpu: "250m"
+            memory: {{ .Values.container.resources.requests.memory }}
+            cpu: {{ .Values.container.resources.requests.cpu }}
           limits:
-            memory: "128Mi"
-            cpu: "500m"
+            memory: {{ .Values.container.resources.limits.memory }}
+            cpu: {{ .Values.container.resources.limits.cpu }}
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
       dnsPolicy: ClusterFirst
