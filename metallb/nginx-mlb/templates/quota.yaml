@@ -8,4 +8,4 @@ spec:
     requests.cpu: {{ .Values.resourcequota.requests.cpu }}
     requests.memory: {{ .Values.resourcequota.requests.memory }}
     limits.cpu: {{ .Values.resourcequota.limits.cpu }}
-    limits.memory: {{ .Values.resourcequota.limites.merory }}
+    limits.memory: {{ .Values.resourcequota.limits.memory }}

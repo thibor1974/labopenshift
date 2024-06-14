@@ -9,7 +9,7 @@ spec:
   completionMode: NonIndexed
   completions: 1
   parallelism: 1
-  suspend: false
+  suspend: true
   template:
     metadata:
       labels:
