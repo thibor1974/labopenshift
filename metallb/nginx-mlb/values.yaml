@@ -17,4 +17,4 @@ resourcequota:
     memory: "2Gi"
     cpu: "2"
 loadbalancer:
-  ip: "192.168.22.224"
+  ip: "192.168.22.182"
