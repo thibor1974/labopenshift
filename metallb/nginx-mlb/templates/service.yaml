@@ -8,12 +8,6 @@ items:
     name: nginx
     namespace: {{ .Values.namespace.name }}
   spec:
-    externalTrafficPolicy: Cluster
-    internalTrafficPolicy: Cluster
-    ipFamilies:
-    - IPv4
-    ipFamilyPolicy: SingleStack
-    loadBalancerIP: {{ .Values.loadbalancer.ip }}
     ports:
     - port: 8080
       protocol: TCP
@@ -21,7 +15,7 @@ items:
     selector:
       app: nginx
     sessionAffinity: None
-    type: LoadBalancer
+    type: ClusterIP
 kind: List
 metadata:
  resourceVersion: ""

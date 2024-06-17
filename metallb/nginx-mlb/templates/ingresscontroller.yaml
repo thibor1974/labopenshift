@@ -13,3 +13,6 @@ spec:
       destination:
         type: Container
   replicas: 2
+  namespaceSelector:
+    matchLabels:
+      name: tektutor
