@@ -15,4 +15,4 @@ spec:
   replicas: 2
   namespaceSelector:
     matchLabels:
-      name: tektutor
+      type: sharded
