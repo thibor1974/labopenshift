@@ -4,7 +4,7 @@ metadata:
   name: {{ .Values.namespace.name }}-sharded
   namespace: {{ .Values.namespace.name }}
 spec:
-  host: toto.{{ .Values.namespace.name }}.ocp.lan
+  host: {{ .Values.route.host }}
   port:
     targetPort: 8080
   to:
