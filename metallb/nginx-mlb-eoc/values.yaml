@@ -1,7 +1,7 @@
 namespace:
-  name: tektutor2
+  name: tektutor3
 route:
-  host: toto.tektutor2.ocp.lan
+  host: toto.tektutor3.ocp.lan
 container:
   resources:
     requests:
