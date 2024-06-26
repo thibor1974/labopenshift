@@ -1,5 +1,5 @@
 apiVersion: v2
-name: nginx-mlb
+name: nginx-mlb-eoc
 description: Playing around with Metallb
 type: application
 version: 0.1.0
