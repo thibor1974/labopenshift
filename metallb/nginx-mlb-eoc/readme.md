@@ -15,7 +15,7 @@ toto.tektutor5.ocp.lan 192.168.22.185
 the service that need to have the IP needs to be annotated
 ----------------------------------------------------------
 oc annotate service/router-tektutor2-ingress metallb.universe.tf/address-pool=pool1 -n openshift-ingress
-oc annotate service/router-tektutor2-ingress metallb.universe.tf/loadBalancerIPs: 192.168.22.182 -n openshift-ingress
+oc annotate service/router-tektutor2-ingress metallb.universe.tf/loadBalancerIPs=192.168.22.182 -n openshift-ingress
 
 Label thing for the sharding
 -----------------------------

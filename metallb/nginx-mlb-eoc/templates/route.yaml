@@ -6,7 +6,7 @@ metadata:
 spec:
   host: {{ .Values.route.host }}
   port:
-    targetPort: 8080
+    targetPort: 9898
   to:
     kind: Service
     name: nginx

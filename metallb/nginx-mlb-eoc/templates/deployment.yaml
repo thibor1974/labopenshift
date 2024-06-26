@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: bitnami/nginx:1.20
+        image: docker.io/stefanprodan/podinfo:latest
         imagePullPolicy: IfNotPresent
         resources: 
           requests:
