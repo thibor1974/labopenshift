@@ -1,6 +1,8 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
+  labels:
+    name: {{ .Values.namespace.name }} 
   name: {{ .Values.namespace.name }}-sharded
   namespace: {{ .Values.namespace.name }}
 spec:

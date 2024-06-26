@@ -16,4 +16,4 @@ spec:
   replicas: 2
   namespaceSelector:
     matchLabels:
-      type: sharded
+      name: {{ .Values.namespace.name }}

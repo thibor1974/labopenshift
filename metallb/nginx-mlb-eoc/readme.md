@@ -19,3 +19,18 @@ oc annotate service/router-tektutor2-ingress metallb.universe.tf/loadBalancerIPs
 
 Label thing for the sharding
 -----------------------------
+
+https://access.redhat.com/solutions/5097511
+
+oc edit  ingresscontrollers.operator.openshift.io  default -n openshift-ingress-operator
+
+  namespaceSelector:
+    matchExpressions:
+    - key: type
+      operator: NotIn
+      values:
+      - tektutor2
+      - tektutor3
+      - tektutor4
+      - tektutor5
+

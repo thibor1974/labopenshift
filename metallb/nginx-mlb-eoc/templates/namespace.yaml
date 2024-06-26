@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   name: {{ .Values.namespace.name }}
   labels:
-    type: sharded
+    name: {{ .Values.namespace.name }} 
