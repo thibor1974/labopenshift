@@ -1,7 +1,7 @@
 namespace:
   name: tektutor3
 route:
-  host: toto.tektutor3.ocp.lan
+  host: toto.tektutor2.ocp.lan
 container:
   resources:
     requests:
@@ -19,4 +19,4 @@ resourcequota:
     memory: "2Gi"
     cpu: "2"
 loadbalancer:
-  ip: "192.168.22.183"
+  ip: "192.168.22.182"

@@ -4,6 +4,7 @@ helm upgrade thib --install nginx-mlb-eoc/ -n ns-thib-system
 
 helm upgrade thib --install nginx-mlb-eoc/ -n ns-thib-system -f nginx-mlb-eoc/values-tektutor2.yaml
 
+
 Sample for testing
 toto.tektutor2.ocp.lan 192.168.22.182
 toto.tektutor3.ocp.lan 192.168.22.183
