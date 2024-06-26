@@ -2,7 +2,7 @@ running it
 -----------
 helm upgrade thib --install nginx-mlb-eoc/ -n ns-thib-system
 
-helm upgrade thib --install nginx-mlb-eoc/ -n ns-thib-system -f nginx-mlb-eoc/values-tektutor2.yaml
+helm upgrade thib2 --install nginx-mlb-eoc/ -n ns-thib-system -f nginx-mlb-eoc/values-tektutor2.yaml
 
 
 Sample for testing
@@ -15,4 +15,4 @@ toto.tektutor5.ocp.lan 192.168.22.185
 the service that need to have the IP needs to be annotated
 ----------------------------------------------------------
 
-oc annotate service/router-tektutor3-ingress metallb.universe.tf/ip-allocated-from-pool=192.168.22.180 -n openshift-ingress
+oc annotate service/router-tektutor3-ingress metallb.universe.tf/ip-allocated-from-pool=192.168.22.183 -n openshift-ingress
