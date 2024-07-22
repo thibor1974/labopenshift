@@ -6,7 +6,8 @@ metadata:
 spec:
   domain: {{ .Values.namespace.name }}.ocp.lan
   endpointPublishingStrategy:
-    type: LoadBalancerService
+    #type: LoadBalancerService
+    type: Private
   httpCompression: {}
   httpEmptyRequestsPolicy: Respond
   logging:
