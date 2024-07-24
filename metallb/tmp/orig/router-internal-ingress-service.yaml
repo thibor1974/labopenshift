@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    service.alpha.openshift.io/serving-cert-secret-name: router-metrics-certs-tektutor3-ingress
+    service.alpha.openshift.io/serving-cert-signed-by: openshift-service-serving-signer@1716831546
+    service.beta.openshift.io/serving-cert-signed-by: openshift-service-serving-signer@1716831546
+  creationTimestamp: "2024-07-22T14:13:49Z"
+  labels:
+    ingresscontroller.operator.openshift.io/owning-ingresscontroller: tektutor3-ingress
+  name: router-internal-tektutor3-ingress
+  namespace: openshift-ingress
+  ownerReferences:
+  - apiVersion: apps/v1
+    controller: true
+    kind: Deployment
+    name: router-tektutor3-ingress
+    uid: 271c2fdd-609a-4c59-9fcb-20274bdca2b0
+  resourceVersion: "2305296"
+  uid: 86634428-1824-47e7-b4b4-7a388670e30a
+spec:
+  clusterIP: 172.30.240.72
+  clusterIPs:
+  - 172.30.240.72
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: https
+  - name: metrics
+    port: 1936
+    protocol: TCP
+    targetPort: metrics
+  selector:
+    ingresscontroller.operator.openshift.io/deployment-ingresscontroller: tektutor3-ingress
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}

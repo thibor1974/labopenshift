@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    ingresscontroller.operator.openshift.io/owning-ingresscontroller: tektutor3-ingress
+  name: router-internal-tektutor3-ingress
+  namespace: openshift-ingress
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: https
+  selector:
+    ingresscontroller.operator.openshift.io/deployment-ingresscontroller: tektutor3-ingress
+  sessionAffinity: None
+  type: ClusterIP

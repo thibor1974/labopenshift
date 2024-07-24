@@ -1,0 +1,22 @@
+namespace:
+  name: tektutor2
+route:
+  host: toto.tektutor2.ocp.lan
+container:
+  resources:
+    requests:
+      memory: "100Mi"
+      cpu: "250m"
+    limits:
+      memory: 128Mi
+      cpu: "500m"
+resourcequota:
+  pods: "4"
+  requests:
+    memory: "1Gi"
+    cpu: "1"
+  limits:
+    memory: "2Gi"
+    cpu: "2"
+loadbalancer:
+  ip: "192.168.22.182"

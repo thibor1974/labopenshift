@@ -1,0 +1,5 @@
+apiVersion: v2
+name: nginx-mlb-hook
+description: Playing around with postinstallhook
+type: application
+version: 0.1.0

@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: {{ .Values.namespace.name }}
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 4
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: nginx
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: docker.io/stefanprodan/podinfo:latest
+        imagePullPolicy: IfNotPresent
+        resources: 
+          requests:
+            memory: {{ .Values.container.resources.requests.memory }}
+            cpu: {{ .Values.container.resources.requests.cpu }}
+          limits:
+            memory: {{ .Values.container.resources.limits.memory }}
+            cpu: {{ .Values.container.resources.limits.cpu }}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30

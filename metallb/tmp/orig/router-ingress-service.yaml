@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    metallb.universe.tf/ip-allocated-from-pool: pool1
+    metallb.universe.tf/loadBalancerIPs: 192.168.22.183
+    traffic-policy.network.alpha.openshift.io/local-with-fallback: ""
+  creationTimestamp: "2024-07-22T14:13:49Z"
+  labels:
+    app: router
+    ingresscontroller.operator.openshift.io/owning-ingresscontroller: tektutor3-ingress
+    router: router-tektutor3-ingress
+  name: router-tektutor3-ingress
+  namespace: openshift-ingress
+  ownerReferences:
+  - apiVersion: apps/v1
+    controller: true
+    kind: Deployment
+    name: router-tektutor3-ingress
+    uid: 271c2fdd-609a-4c59-9fcb-20274bdca2b0
+  resourceVersion: "2305440"
+  uid: ac26f531-3c99-44be-a4ef-1e47ded2b170
+spec:
+  allocateLoadBalancerNodePorts: true
+  clusterIP: 172.30.36.128
+  clusterIPs:
+  - 172.30.36.128
+  externalTrafficPolicy: Local
+  healthCheckNodePort: 31728
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    nodePort: 31009
+    port: 80
+    protocol: TCP
+    targetPort: http
+  - name: https
+    nodePort: 32041
+    port: 443
+    protocol: TCP
+    targetPort: https
+  selector:
+    ingresscontroller.operator.openshift.io/deployment-ingresscontroller: tektutor3-ingress
+  sessionAffinity: None
+  type: LoadBalancer
+status:
+  loadBalancer:
+    ingress:
+    - ip: 192.168.22.183
