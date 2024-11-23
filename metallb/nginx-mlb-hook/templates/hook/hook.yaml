@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hook-app
+  namespace: {{ .Values.namespace.name }}
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    metadata:
+      name: hook-app
+    spec:
+      activeDeadlineSeconds: 30
+      backoffLimit: 2
+      restartPolicy: Never
+      containers:
+      - name: post-install-job
+        image: "docker.io/d0ck3rj3ff/ose-cli"
+        command: ["/usr/bin/oc",  "label", "ns", "tektutor-hook", "test=toto"]
+        
