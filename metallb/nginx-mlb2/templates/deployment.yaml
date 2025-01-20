@@ -28,6 +28,11 @@ spec:
         resources: {}
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
+        env:
+        - name: http_proxy
+          value: http://{{ .Values.proxy.proxyAdress }}:{{ .Values.proxy.proxyPort }}
+        - name: https_proxy
+          value: http://{{ .Values.proxy.proxyAdress }}:{{ .Values.proxy.proxyPort }}
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
