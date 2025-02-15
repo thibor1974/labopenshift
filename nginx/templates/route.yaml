@@ -1,0 +1,12 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: nginx-sharded
+  namespace: tektutor2
+spec:
+  host: toto.tektutor2.ocp.lan
+  port:
+    targetPort: 8080
+  to:
+    kind: Service
+    name: nginx
