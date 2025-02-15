@@ -1,5 +1,5 @@
 namespace:
-  name: tektutor2
+  name: petbattle
 container:
   resources:
     requests:
@@ -16,5 +16,3 @@ resourcequota:
   limits:
     memory: "2Gi"
     cpu: "2"
-loadbalancer:
-  ip: "192.168.22.182"
