@@ -59,15 +59,29 @@ validate_version() {
 # Function to fetch from Red Hat Security Advisory API
 fetch_red_hat_advisories() {
     local version=$1
-    local api_url="https://access.redhat.com/security/data/oval/feed-v2/com.redhat.rhsa-all.xml"
+    local api_url_all_bz2="https://access.redhat.com/security/data/oval/feed-v2/com.redhat.rhsa-all.xml.bz2"
     
     echo -e "${BLUE}[*] Fetching Red Hat Security Advisories for OpenShift ${version}...${NC}" >&2
     
-    # Try to fetch OVAL data
+    # Try to fetch and decompress OVAL data (.xml.bz2)
     if command -v curl &> /dev/null; then
-        if curl -s --head --connect-timeout 5 "$api_url" | head -n 1 | grep "200\|301\|302" > /dev/null; then
-            curl -s "$api_url" > "$TEMP_DIR/advisories.xml" 2>/dev/null || true
-        fi
+        for url in "$api_url_all_bz2"; do
+            if curl -sfL --connect-timeout 10 "$url" -o "$TEMP_DIR/advisories.xml.bz2" 2>/dev/null; then
+                if python3 - "$TEMP_DIR/advisories.xml.bz2" "$TEMP_DIR/advisories.xml" << 'PYTHON_SCRIPT'
+import bz2
+import sys
+
+try:
+    with bz2.open(sys.argv[1], "rb") as src, open(sys.argv[2], "wb") as dst:
+        dst.write(src.read())
+except Exception:
+    raise SystemExit(1)
+PYTHON_SCRIPT
+                then
+                    return 0
+                fi
+            fi
+        done
     fi
 }
 
@@ -84,126 +98,151 @@ fetch_nvd_data() {
     fi
 }
 
-# Function to parse and extract vulnerabilities (local data source)
-parse_local_vulnerabilities() {
+# Function to parse and extract vulnerabilities from Red Hat OVAL XML
+parse_red_hat_oval_vulnerabilities() {
     local version=$1
+    local input_xml="$TEMP_DIR/advisories.xml"
     
-    # This creates sample vulnerability data
-    # In production, this would parse actual advisory data
-    cat > "$TEMP_DIR/vulns.json" << 'EOF'
-{
-  "vulnerabilities": [
-    {
-      "id": "CVE-2024-1234",
-      "title": "OpenShift Kubernetes Engine Vulnerability",
-      "severity": "high",
-      "score": 7.5,
-      "affected_versions": ["4.10.0-4.10.50", "4.11.0-4.11.40", "4.12.0-4.12.10"],
-      "description": "A flaw was found in OpenShift Kubernetes Engine where improper validation allows local attackers to gain elevated privileges.",
-      "fixed_versions": ["4.10.51", "4.11.41", "4.12.11"],
-      "published": "2024-01-15",
-      "cvss_vector": "CVSS:3.1/AV:L/AU:L/C:H/I:H/A:H"
-    },
-    {
-      "id": "CVE-2024-5678",
-      "title": "OpenShift API Server Denial of Service",
-      "severity": "high",
-      "score": 7.5,
-      "affected_versions": ["4.11.0-4.11.50", "4.12.0-4.12.20"],
-      "description": "A vulnerability in the OpenShift API Server allows remote unauthenticated attackers to cause a denial of service.",
-      "fixed_versions": ["4.11.51", "4.12.21"],
-      "published": "2024-02-10",
-      "cvss_vector": "CVSS:3.1/AV:N/AU:N/C:N/I:N/A:H"
-    },
-    {
-      "id": "CVE-2023-9101",
-      "title": "OpenShift CLI Path Traversal",
-      "severity": "medium",
-      "score": 5.5,
-      "affected_versions": ["4.10.0-4.10.60", "4.11.0-4.11.30"],
-      "description": "Path traversal vulnerability in OpenShift CLI allows attackers to read arbitrary files.",
-      "fixed_versions": ["4.10.61", "4.11.31"],
-      "published": "2023-09-05",
-      "cvss_vector": "CVSS:3.1/AV:L/AU:L/C:H/I:N/A:N"
-    },
-    {
-      "id": "CVE-2024-1111",
-      "title": "OpenShift Storage Plugin Integer Overflow",
-      "severity": "critical",
-      "score": 9.8,
-      "affected_versions": ["4.11.0-4.11.20", "4.12.0-4.12.5"],
-      "description": "Critical integer overflow in OpenShift storage plugin allows remote code execution.",
-      "fixed_versions": ["4.11.21", "4.12.6"],
-      "published": "2024-01-20",
-      "cvss_vector": "CVSS:3.1/AV:N/AU:N/C:H/I:H/A:H"
-    }
-  ]
-}
-EOF
-}
-
-# Function to filter vulnerabilities by version
-filter_vulnerabilities_by_version() {
-    local version=$1
-    local input_file=$2
+    if [[ ! -s "$input_xml" ]]; then
+        return 0
+    fi
     
-    # Parse version components
-    local major=$(echo "$version" | cut -d. -f1)
-    local minor=$(echo "$version" | cut -d. -f2)
-    local patch=${3:-0}
-    
-    # Create version regex patterns
-    python3 -c "
+    python3 - "$input_xml" "$version" "$SEVERITY_FILTER" << 'PYTHON_SCRIPT'
 import json
-import sys
 import re
-from packaging import version as pkg_version
+import sys
+import xml.etree.ElementTree as ET
+
+
+def local_name(tag):
+    return tag.split("}", 1)[-1] if "}" in tag else tag
+
+
+def find_first_text(elem, names):
+    wanted = set(names)
+    for child in elem.iter():
+        if local_name(child.tag) in wanted and child.text:
+            text = child.text.strip()
+            if text:
+                return text
+    return ""
+
+
+def find_all_refs(metadata):
+    refs = []
+    for child in metadata.iter():
+        if local_name(child.tag) == "reference":
+            source = (child.attrib.get("source") or "").strip()
+            ref_id = (child.attrib.get("ref_id") or "").strip()
+            if ref_id:
+                refs.append((source, ref_id))
+    return refs
+
+
+def find_severity(metadata):
+    for child in metadata.iter():
+        if local_name(child.tag) == "severity" and child.text:
+            sev = child.text.strip().lower()
+            if sev:
+                return sev
+    return "unknown"
+
+
+def find_cvss_score(metadata):
+    score_tags = {
+        "cvss3_base_score",
+        "cvss_base_score",
+        "cvss3_score",
+        "cvss_score",
+    }
+    score_text = find_first_text(metadata, score_tags)
+    if not score_text:
+        return None
+    try:
+        return float(score_text)
+    except Exception:
+        return None
+
+
+def find_published(metadata):
+    for child in metadata.iter():
+        if local_name(child.tag) in {"issued", "updated", "date"}:
+            date_val = (child.attrib.get("date") or "").strip()
+            if date_val:
+                return date_val
+            if child.text and child.text.strip():
+                return child.text.strip()
+    return "N/A"
+
+
+def find_platform_texts(metadata):
+    platforms = []
+    for child in metadata.iter():
+        if local_name(child.tag) == "platform" and child.text:
+            text = child.text.strip()
+            if text:
+                platforms.append(text)
+    return platforms
+
+
+input_xml = sys.argv[1]
+target_version = sys.argv[2]
+severity_filter = sys.argv[3].lower().strip()
+major_minor = ".".join(target_version.split(".")[:2])
 
 try:
-    with open('$input_file', 'r') as f:
-        data = json.load(f)
+    tree = ET.parse(input_xml)
+    root = tree.getroot()
+except Exception:
+    sys.exit(0)
+
+definitions = [elem for elem in root.iter() if local_name(elem.tag) == "definition"]
+for definition in definitions:
+    metadata = None
+    for child in definition:
+        if local_name(child.tag) == "metadata":
+            metadata = child
+            break
+    if metadata is None:
+        continue
     
-    target_version = pkg_version.parse('$version')
-    severity_filter = '$SEVERITY_FILTER'
+    title = find_first_text(metadata, {"title"})
+    description = find_first_text(metadata, {"description"})
+    blob = " ".join(text.strip() for text in definition.itertext() if text and text.strip()).lower()
     
-    for vuln in data.get('vulnerabilities', []):
-        # Check severity filter
-        if severity_filter and vuln.get('severity', '').lower() != severity_filter.lower():
-            continue
-        
-        # Check if version is affected
-        affected_versions = vuln.get('affected_versions', [])
-        is_affected = False
-        
-        for affected_range in affected_versions:
-            if '-' in affected_range:
-                start, end = affected_range.split('-')
-                try:
-                    start_v = pkg_version.parse(start)
-                    end_v = pkg_version.parse(end)
-                    if start_v <= target_version <= end_v:
-                        is_affected = True
-                        break
-                except:
-                    pass
-            elif pkg_version.parse(affected_range) == target_version:
-                is_affected = True
-                break
-        
-        if is_affected:
-            print(json.dumps(vuln))
-except ImportError:
-    # Fallback without packaging library
-    import json
-    with open('$input_file', 'r') as f:
-        data = json.load(f)
-    for vuln in data.get('vulnerabilities', []):
-        severity_filter = '$SEVERITY_FILTER'
-        if severity_filter and vuln.get('severity', '').lower() != severity_filter.lower():
-            continue
-        print(json.dumps(vuln))
-" 2>/dev/null || cat "$input_file"
+    if "openshift" not in blob:
+        continue
+    
+    version_matches = set(re.findall(r"\b\d+\.\d+(?:\.\d+)?\b", blob))
+    if version_matches and target_version not in version_matches and major_minor not in version_matches:
+        continue
+    
+    severity = find_severity(metadata)
+    if severity_filter and severity != severity_filter:
+        continue
+    
+    score = find_cvss_score(metadata)
+    published = find_published(metadata)
+    references = find_all_refs(metadata)
+    cve_ids = sorted({ref_id for source, ref_id in references if ref_id.startswith("CVE-")})
+    
+    entry_ids = cve_ids if cve_ids else ["N/A"]
+    for entry_id in entry_ids:
+        record = {
+            "id": entry_id,
+            "title": title or "N/A",
+            "severity": severity or "unknown",
+            "score": score if score is not None else "N/A",
+            "affected_versions": sorted(version_matches) if version_matches else [major_minor],
+            "description": description or "N/A",
+            "fixed_versions": [],
+            "published": published,
+            "cvss_vector": "N/A"
+        }
+        print(json.dumps(record))
+PYTHON_SCRIPT
 }
+
 
 # Function to output as table
 output_table() {
@@ -215,18 +254,19 @@ output_table() {
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════════════════════${NC}"
     echo ""
     
-    python3 << 'PYTHON_SCRIPT'
+    python3 - "$input_file" << 'PYTHON_SCRIPT'
 import json
 import sys
 
 try:
     vulns = []
-    for line in sys.stdin:
-        if line.strip():
-            try:
-                vulns.append(json.loads(line))
-            except:
-                pass
+    with open(sys.argv[1], 'r') as f:
+        for line in f:
+            if line.strip():
+                try:
+                    vulns.append(json.loads(line))
+                except:
+                    pass
     
     if not vulns:
         print("No vulnerabilities found for the specified criteria.")
@@ -258,18 +298,19 @@ PYTHON_SCRIPT
 output_csv() {
     local input_file=$1
     
-    python3 << 'PYTHON_SCRIPT'
+    python3 - "$input_file" << 'PYTHON_SCRIPT'
 import json
 import sys
 import csv
 
 vulns = []
-for line in sys.stdin:
-    if line.strip():
-        try:
-            vulns.append(json.loads(line))
-        except:
-            pass
+with open(sys.argv[1], 'r') as f:
+    for line in f:
+        if line.strip():
+            try:
+                vulns.append(json.loads(line))
+            except:
+                pass
 
 if vulns:
     writer = csv.DictWriter(sys.stdout, fieldnames=['id', 'title', 'severity', 'score', 'published', 'fixed_versions', 'cvss_vector'])
@@ -291,17 +332,18 @@ PYTHON_SCRIPT
 output_json() {
     local input_file=$1
     
-    python3 << 'PYTHON_SCRIPT'
+    python3 - "$input_file" << 'PYTHON_SCRIPT'
 import json
 import sys
 
 vulns = []
-for line in sys.stdin:
-    if line.strip():
-        try:
-            vulns.append(json.loads(line))
-        except:
-            pass
+with open(sys.argv[1], 'r') as f:
+    for line in f:
+        if line.strip():
+            try:
+                vulns.append(json.loads(line))
+            except:
+                pass
 
 print(json.dumps({"vulnerabilities": vulns, "count": len(vulns)}, indent=2))
 PYTHON_SCRIPT
@@ -322,21 +364,20 @@ main() {
     # Fetch data from various sources
     fetch_red_hat_advisories "$version"
     fetch_nvd_data "$version"
-    parse_local_vulnerabilities "$version"
-    
-    # Filter vulnerabilities by version
-    filtered_data=$(filter_vulnerabilities_by_version "$version" "$TEMP_DIR/vulns.json")
+    filtered_data=$(parse_red_hat_oval_vulnerabilities "$version")
+    filtered_file="$TEMP_DIR/filtered_vulns.jsonl"
+    printf '%s\n' "$filtered_data" > "$filtered_file"
     
     # Output in requested format
     case "$OUTPUT_FORMAT" in
         json)
-            echo "$filtered_data" | output_json "$TEMP_DIR/vulns.json"
+            output_json "$filtered_file"
             ;;
         csv)
-            echo "$filtered_data" | output_csv "$TEMP_DIR/vulns.json"
+            output_csv "$filtered_file"
             ;;
         table|*)
-            echo "$filtered_data" | output_table "$TEMP_DIR/vulns.json"
+            output_table "$filtered_file"
             ;;
     esac
     
