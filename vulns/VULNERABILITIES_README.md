@@ -1,26 +1,22 @@
 # OpenShift Vulnerability Scanner
 
-A comprehensive bash script to query and list vulnerabilities affecting specific OpenShift versions.
+A comprehensive bash/Python solution to query **real vulnerabilities** affecting specific OpenShift versions using the official Red Hat Security API.
 
 ## Features
 
-- **Multiple Output Formats**: Table, CSV, and JSON
-- **Severity Filtering**: Filter by critical, high, medium, or low severity
-- **Version Validation**: Ensures correct version format
-- **Data Source Integration**: Supports Red Hat Security Advisories, NVD, and local data
-- **Color-coded Output**: Enhanced readability
-- **Cross-platform**: Works on Linux and macOS
+✅ **Real-time Data** - Fetches from official Red Hat Security Advisory API  
+✅ **Multiple Output Formats** - Table, CSV, JSON, and Statistics  
+✅ **Severity Filtering** - Filter by critical, important, moderate, low  
+✅ **Version Validation** - Enforces correct version format (X.Y)  
+✅ **Fast Performance** - Results in seconds  
+✅ **Cross-platform** - Works on Linux and macOS  
+✅ **Three Implementations** - Bash, Advanced Bash, and Python options  
 
 ## Installation
 
-1. Copy the script to your workspace:
+Scripts are ready to use immediately:
 ```bash
-chmod +x get_vulnerabilities.sh
-```
-
-2. Optional: Install the `packaging` Python library for better version comparison:
-```bash
-pip install packaging
+chmod +x *.sh *.py
 ```
 
 ## Usage
@@ -28,166 +24,234 @@ pip install packaging
 ### Basic Usage
 
 ```bash
-# List all vulnerabilities for OpenShift 4.12.0
-./get_vulnerabilities.sh 4.12.0
+# List all vulnerabilities for OpenShift 4.21
+./get_vulnerabilities.sh 4.21
 
 # List vulnerabilities in CSV format
-./get_vulnerabilities.sh 4.12.0 csv
+./get_vulnerabilities.sh 4.21 csv
 
 # List vulnerabilities in JSON format
-./get_vulnerabilities.sh 4.12.0 json
+./get_vulnerabilities.sh 4.21 json
+
+# Show statistics for OpenShift 4.21
+./get_vulnerabilities.py 4.21 --format stats
 ```
 
 ### Filter by Severity
 
 ```bash
-# Show only critical vulnerabilities
-./get_vulnerabilities.sh 4.12.0 table critical
+# Show only important vulnerabilities (bash)
+./get_vulnerabilities.sh 4.21 table important
 
-# Show only high severity vulnerabilities in CSV
-./get_vulnerabilities.sh 4.11.5 csv high
+# Show only important vulnerabilities in CSV
+./get_vulnerabilities.sh 4.21 csv important
+
+# Python version with severity filter
+./get_vulnerabilities.py 4.21 --severity important
 ```
 
 ### Examples
 
 ```bash
 # Table format (default)
-./get_vulnerabilities.sh 4.12.0
+./get_vulnerabilities.sh 4.21
 
 # CSV export for spreadsheets
-./get_vulnerabilities.sh 4.12.0 csv > vulns_4.12.0.csv
+./get_vulnerabilities.sh 4.21 csv > vulns_4.21.csv
 
 # JSON for programmatic processing
-./get_vulnerabilities.sh 4.12.0 json > vulns_4.12.0.json
+./get_vulnerabilities.sh 4.21 json > vulns_4.21.json
 
-# Filter critical vulnerabilities in table format
-./get_vulnerabilities.sh 4.12.0 table critical
+# Statistics summary
+./get_vulnerabilities.py 4.21 --format stats
 
-# Export high-severity vulnerabilities to CSV
-./get_vulnerabilities.sh 4.11.5 csv high > critical_vulns.csv
+# Export important vulnerabilities to CSV
+./get_vulnerabilities.sh 4.21 csv important > important_vulns.csv
+
+# Python with all options
+./get_vulnerabilities.py 4.21 --severity important --format csv --output report.csv
+
+# Advanced bash script (fastest)
+./get_vulnerabilities_advanced.sh 4.21 csv > report.csv
 ```
 
 ## Output Formats
 
 ### Table Format (Default)
 ```
-═════════════════════════════════════════════════════════════════════════════
-OpenShift Vulnerabilities Report
-═════════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════════
+OpenShift 4.21 - Vulnerabilities Report
+════════════════════════════════════════════════════════════════════════════════
 
-CVE ID          Severity   Score    Published
-────────────────────────────────────────────────────────────────────────────
-CVE-2024-1234   HIGH       7.5      2024-01-15
-  Title: OpenShift Kubernetes Engine Vulnerability
-  Description: A flaw was found in OpenShift Kubernetes Engine...
-  Fixed in: 4.10.51, 4.11.41, 4.12.11
-  CVSS Vector: CVSS:3.1/AV:L/AU:L/C:H/I:H/A:H
+CVE ID          Severity     Date         Impact              
+────────────────────────────────────────────────────────────────────────────────
+CVE-2026-46300  IMPORTANT    2026-05-13T12:00:00Z N/A                 
+CVE-2026-41674  IMPORTANT    2026-05-07T03:47:51Z N/A                 
+CVE-2026-43284  IMPORTANT    2026-05-07T00:00:00Z N/A                 
+
+Total: 27 vulnerabilities found
 ```
 
 ### CSV Format
-```
-id,title,severity,score,published,fixed_versions,cvss_vector
-CVE-2024-1234,OpenShift Kubernetes Engine Vulnerability,high,7.5,2024-01-15,"4.10.51;4.11.41;4.12.11",CVSS:3.1/AV:L/AU:L/C:H/I:H/A:H
+```csv
+CVE,severity,public_date,bugzilla_id,impact
+CVE-2026-46300,important,2026-05-13T12:00:00Z,,
+CVE-2026-41674,important,2026-05-07T03:47:51Z,,
+CVE-2026-43284,important,2026-05-07T00:00:00Z,,
 ```
 
 ### JSON Format
 ```json
 {
+  "version": "4.21",
+  "count": 27,
   "vulnerabilities": [
     {
-      "id": "CVE-2024-1234",
-      "title": "OpenShift Kubernetes Engine Vulnerability",
-      "severity": "high",
-      "score": 7.5,
-      "affected_versions": ["4.10.0-4.10.50", "4.11.0-4.11.40"],
-      "published": "2024-01-15",
-      "cvss_vector": "CVSS:3.1/AV:L/AU:L/C:H/I:H/A:H"
+      "CVE": "CVE-2026-46300",
+      "severity": "important",
+      "public_date": "2026-05-13T12:00:00Z",
+      "bugzilla_id": "2477015",
+      "impact": "N/A"
     }
   ],
-  "count": 1
+  "source": "Red Hat Security Advisory API"
 }
+```
+
+### Statistics Format
+```
+============================================================
+OpenShift 4.21 - Vulnerability Statistics
+============================================================
+
+Total Vulnerabilities: 27
+
+By Severity:
+  CRITICAL: 0
+  IMPORTANT: 19
+  MODERATE: 8
+  LOW: 0
 ```
 
 ## Data Sources
 
-The script attempts to fetch data from multiple sources:
+The scripts fetch data from:
+- **Red Hat Security Advisory API**: Official vulnerability database
+- URL: `https://access.redhat.com/hydra/rest/securitydata/cve.json`
+- Returns: Real-time CVE data for all OpenShift versions
 
-1. **Red Hat Security Advisories**: Official Red Hat security data
-2. **National Vulnerability Database (NVD)**: NIST's vulnerability database
-3. **Local Data**: Built-in sample data for demonstrations
+## Script Comparison
 
-## Extending the Script
+| Feature | Bash | Python | Advanced |
+|---------|------|--------|----------|
+| Table output | ✓ | ✓ | ✓ |
+| CSV output | ✓ | ✓ | ✓ |
+| JSON output | ✓ | ✓ | ✗ |
+| Statistics | ✗ | ✓ | ✗ |
+| Severity filter | ✓ | ✓ | ✗ |
+| Speed | Fast | Fast | Fastest |
+| jq required | ✗ | ✗ | Optional |
 
-### Adding Custom Vulnerability Data
+## Version Format
 
-Edit the `parse_local_vulnerabilities()` function to include your custom vulnerability data:
+The scripts expect version format: **X.Y** (e.g., `4.21`, `4.20`, `4.19`)
 
-```bash
-parse_local_vulnerabilities() {
-    local version=$1
-    
-    cat > "$TEMP_DIR/vulns.json" << 'EOF'
-{
-  "vulnerabilities": [
-    {
-      "id": "CVE-XXXX-XXXXX",
-      "title": "Your Vulnerability Title",
-      "severity": "high",
-      "score": 7.5,
-      "affected_versions": ["4.12.0-4.12.10"],
-      "description": "Vulnerability description",
-      "fixed_versions": ["4.12.11"],
-      "published": "2024-01-15",
-      "cvss_vector": "CVSS:3.1/AV:L/AU:L/C:H/I:H/A:H"
-    }
-  ]
-}
-EOF
-}
-```
-
-### Integrating with Red Hat Security Data
-
-The script can be extended to parse Red Hat's official OVAL data. See the included `get_vulnerabilities_advanced.sh` for implementation details.
-
-### Using with External APIs
-
-For production environments, consider:
-
-1. **Red Hat Security API**: https://access.redhat.com/security/data/
-2. **NVD API**: https://services.nvd.nist.gov/rest/json/cves/1.0
-3. **Grype**: Binary vulnerability scanner (recommended for container images)
+Do NOT use:
+- ❌ `4.21.0` (with patch version)
+- ❌ `4.21.x` (with wildcard)
 
 ## Requirements
 
-- Bash 4.0 or later
-- `curl` (for fetching remote data)
-- `python3` (for JSON processing)
-- Optional: `packaging` Python library (for enhanced version comparison)
+- Bash 4.0+ (for bash scripts)
+- Python 3.6+ (for Python script)
+- `curl` (for API calls)
+- Optional: `jq` (for advanced bash script, has fallback)
 
 ## Exit Codes
 
 - `0`: Successful execution
-- `1`: Invalid version format or missing required arguments
+- `1`: Invalid version format or error
 
-## Limitations
+## Common Tasks
 
-- Local data contains sample vulnerabilities for demonstration
-- Remote data sources require internet connectivity
-- Some APIs may have rate limiting
+### List vulnerabilities for a single version
+```bash
+./get_vulnerabilities.sh 4.21
+```
 
-## Production Recommendations
+### Export to CSV for compliance reports
+```bash
+./get_vulnerabilities.sh 4.21 csv > vulnerability_report_$(date +%Y%m%d).csv
+```
 
-For production use, consider:
+### Check multiple versions
+```bash
+for version in 4.19 4.20 4.21; do
+    echo "=== OpenShift $version ==="
+    ./get_vulnerabilities.py $version --format stats
+done
+```
 
-1. Caching results to avoid repeated API calls
-2. Scheduling regular updates of vulnerability data
-3. Integrating with vulnerability management platforms
-4. Using official Red Hat security channels
-5. Implementing alerting for new critical vulnerabilities
+### Monitor only critical vulnerabilities
+```bash
+CRITICAL=$(./get_vulnerabilities.sh 4.21 | grep CRITICAL | wc -l)
+echo "Critical vulnerabilities: $CRITICAL"
+```
+
+### Export for vulnerability management system
+```bash
+./get_vulnerabilities.sh 4.21 json | curl -X POST http://vuln-mgmt.local/api/import -d @-
+```
+
+## Production Usage
+
+### Scheduling daily scans
+```bash
+# Add to crontab
+0 2 * * * /path/to/vulns/get_vulnerabilities.sh 4.21 csv > /reports/vulns_$(date +\%Y\%m\%d).csv
+```
+
+### Integrating with monitoring
+```bash
+#!/bin/bash
+COUNT=$(./get_vulnerabilities.py 4.21 --format json | jq '.count')
+if [ "$COUNT" -gt 20 ]; then
+    # Send alert
+    mail -s "High vulnerability count" admin@example.com
+fi
+```
+
+### Kubernetes CronJob
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ocp-vuln-scanner
+spec:
+  schedule: "0 2 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: scanner
+            image: quay.io/my-org/ocp-scanner:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              ./get_vulnerabilities.sh 4.21 csv > /reports/vulns_$(date +%Y%m%d).csv
+```
+
+## Supported OpenShift Versions
+
+The scripts work with any OpenShift version available in Red Hat Security API:
+- 4.1 through 4.21+ (as of last update)
+- Enterprise versions (3.11, etc.) - check Red Hat docs
 
 ## Support
 
-For issues or improvements, refer to your OpenShift documentation:
-- https://docs.openshift.com/
-- https://access.redhat.com/security/
+For more information:
+- Red Hat Security: https://access.redhat.com/security/
+- OpenShift Docs: https://docs.openshift.com/
+- CVE Database: https://cve.mitre.org/

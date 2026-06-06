@@ -1,11 +1,11 @@
-# Quick Reference - OpenShift Vulnerability Scripts
+# Quick Reference - OpenShift Vulnerability Scanner
 
 ## Available Scripts
 
 You have **three** vulnerability scanning scripts:
 
-1. **get_vulnerabilities.sh** - Bash script (recommended for most use cases)
-2. **get_vulnerabilities_advanced.sh** - Advanced bash with Red Hat OVAL parsing
+1. **get_vulnerabilities.sh** - Bash script (recommended - use Red Hat API)
+2. **get_vulnerabilities_advanced.sh** - Advanced bash with jq support
 3. **get_vulnerabilities.py** - Python version (cross-platform, more features)
 
 ---
@@ -15,84 +15,93 @@ You have **three** vulnerability scanning scripts:
 ### Using the Bash Script
 
 ```bash
-# Basic usage
-./get_vulnerabilities.sh 4.12.0
+# Basic usage (fetches real vulnerabilities from Red Hat API)
+./get_vulnerabilities.sh 4.21
 
 # Show in different formats
-./get_vulnerabilities.sh 4.12.0 csv > report.csv
-./get_vulnerabilities.sh 4.12.0 json > report.json
+./get_vulnerabilities.sh 4.21 csv > report.csv
+./get_vulnerabilities.sh 4.21 json > report.json
 
 # Filter by severity
-./get_vulnerabilities.sh 4.12.0 table critical
-./get_vulnerabilities.sh 4.12.0 csv high
+./get_vulnerabilities.sh 4.21 table important
+./get_vulnerabilities.sh 4.21 csv moderate
 ```
 
 ### Using the Python Script
 
 ```bash
 # Basic usage
-./get_vulnerabilities.py 4.12.0
+./get_vulnerabilities.py 4.21
 
 # Show in different formats
-./get_vulnerabilities.py 4.12.0 --format csv > report.csv
-./get_vulnerabilities.py 4.12.0 --format json > report.json
-./get_vulnerabilities.py 4.12.0 --format stats
+./get_vulnerabilities.py 4.21 --format csv > report.csv
+./get_vulnerabilities.py 4.21 --format json > report.json
+./get_vulnerabilities.py 4.21 --format stats
 
 # Filter by severity
-./get_vulnerabilities.py 4.12.0 --severity critical
-./get_vulnerabilities.py 4.12.0 -s high -f csv
+./get_vulnerabilities.py 4.21 --severity important
+./get_vulnerabilities.py 4.21 -s moderate -f csv
+```
+
+### Using the Advanced Bash Script
+
+```bash
+# Fastest execution (uses jq, falls back to Python if needed)
+./get_vulnerabilities_advanced.sh 4.21
+
+# With format options
+./get_vulnerabilities_advanced.sh 4.21 csv
 ```
 
 ---
 
 ## Complete Usage Examples
 
-### Example 1: Get all vulnerabilities for OpenShift 4.12.0
+### Example 1: Get all vulnerabilities for OpenShift 4.21
 ```bash
-./get_vulnerabilities.sh 4.12.0
+./get_vulnerabilities.sh 4.21
 ```
 
 Output: Human-readable table with CVE details
 
-### Example 2: Export critical vulnerabilities as CSV
+### Example 2: Export important vulnerabilities as CSV
 ```bash
-./get_vulnerabilities.sh 4.12.0 csv critical > critical_vulns.csv
+./get_vulnerabilities.sh 4.21 csv important > important_vulns.csv
 ```
 
 ### Example 3: Get JSON data for programmatic processing
 ```bash
-./get_vulnerabilities.py 4.12.0 --format json | jq '.vulnerabilities[] | select(.severity=="critical")'
+./get_vulnerabilities.py 4.21 --format json | jq '.vulnerabilities[] | select(.severity=="important")'
 ```
 
 ### Example 4: Generate vulnerability statistics
 ```bash
-./get_vulnerabilities.py 4.12.0 --format stats
+./get_vulnerabilities.py 4.21 --format stats
 ```
 
 Output:
 ```
 ============================================================
-OpenShift 4.12.0 - Vulnerability Statistics
+OpenShift 4.21 - Vulnerability Statistics
 ============================================================
 
-Total Vulnerabilities: 4
+Total Vulnerabilities: 27
 
 By Severity:
-  CRITICAL: 1
-  HIGH: 2
-  MEDIUM: 1
-
-Average CVSS Score: 7.3
+  CRITICAL: 0
+  IMPORTANT: 19
+  MODERATE: 8
+  LOW: 0
 ```
 
-### Example 5: Check only high-severity vulnerabilities
+### Example 5: Check only important vulnerabilities
 ```bash
-./get_vulnerabilities.sh 4.11.5 table high
+./get_vulnerabilities.sh 4.21 table important
 ```
 
 ### Example 6: Batch check multiple versions
 ```bash
-for version in 4.10.0 4.11.0 4.12.0; do
+for version in 4.19 4.20 4.21; do
     echo "=== Checking OpenShift $version ==="
     ./get_vulnerabilities.py $version --format stats
 done
@@ -100,7 +109,7 @@ done
 
 ### Example 7: Create a vulnerability report with timestamp
 ```bash
-VERSION="4.12.0"
+VERSION="4.21"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 ./get_vulnerabilities.sh $VERSION csv > "vulns_${VERSION}_${TIMESTAMP}.csv"
 ```
@@ -109,51 +118,50 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 ## Choosing Which Script
 
-| Script | Best For | Language | Features |
-|--------|----------|----------|----------|
-| **get_vulnerabilities.sh** | General use | Bash | Simple, fast, multiple formats |
-| **get_vulnerabilities_advanced.sh** | Red Hat OVAL parsing | Bash | Parse official Red Hat security data |
-| **get_vulnerabilities.py** | Advanced filtering | Python | Rich CLI, statistics, cross-platform |
+| Script | Best For | Language | Speed | Features |
+|--------|----------|----------|-------|----------|
+| **get_vulnerabilities.sh** | General use | Bash | Fast | All formats, good balance |
+| **get_vulnerabilities_advanced.sh** | Fastest execution | Bash | Fastest | jq-based, lightweight |
+| **get_vulnerabilities.py** | Advanced filtering | Python | Fast | Rich CLI, statistics, cross-platform |
 
 ---
 
 ## Output Format Reference
 
-### Table Format
+### Table Format (Default)
 ```
-═══════════════════════════════════════════════════════════════════════════════
-OpenShift Vulnerabilities Report
-═══════════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════════
+OpenShift 4.21 - Vulnerabilities Report
+════════════════════════════════════════════════════════════════════════════════
 
-CVE ID          Severity   Score    Published
-───────────────────────────────────────────────────────────────────────────────
-CVE-2024-1234   HIGH       7.5      2024-01-15
-  Title: OpenShift Kubernetes Engine Vulnerability
-  Description: A flaw was found in OpenShift Kubernetes Engine...
-  Fixed in: 4.10.51, 4.11.41, 4.12.11
-  CVSS Vector: CVSS:3.1/AV:L/AU:L/C:H/I:H/A:H
+CVE ID          Severity     Date         Impact              
+────────────────────────────────────────────────────────────────────────────────
+CVE-2026-46300  IMPORTANT    2026-05-13T12:00:00Z N/A                 
+CVE-2026-41674  IMPORTANT    2026-05-07T03:47:51Z N/A                 
 ```
 
 ### CSV Format
 ```csv
-CVE ID,Title,Severity,Score,Published,Fixed Versions,CVSS Vector
-CVE-2024-1234,"OpenShift Kubernetes Engine Vulnerability",high,7.5,2024-01-15,"4.10.51;4.11.41;4.12.11",CVSS:3.1/AV:L/AU:L/C:H/I:H/A:H
+CVE,severity,public_date,bugzilla_id,impact
+CVE-2026-46300,important,2026-05-13T12:00:00Z,,
+CVE-2026-41674,important,2026-05-07T03:47:51Z,,
 ```
 
 ### JSON Format
 ```json
 {
-  "version": "4.12.0",
-  "generated": "2024-06-06T10:30:45.123456",
-  "count": 2,
+  "version": "4.21",
+  "count": 27,
   "vulnerabilities": [
     {
-      "id": "CVE-2024-1234",
-      "title": "OpenShift Kubernetes Engine Vulnerability",
-      "severity": "high",
-      ...
+      "CVE": "CVE-2026-46300",
+      "severity": "important",
+      "public_date": "2026-05-13T12:00:00Z",
+      "bugzilla_id": "",
+      "impact": "N/A"
     }
-  ]
+  ],
+  "source": "Red Hat Security Advisory API"
 }
 ```
 
@@ -167,7 +175,7 @@ CVE-2024-1234,"OpenShift Kubernetes Engine Vulnerability",high,7.5,2024-01-15,"4
 REPORT_DIR="./reports"
 mkdir -p "$REPORT_DIR"
 
-for version in 4.10.0 4.11.0 4.12.0; do
+for version in 4.19 4.20 4.21; do
     echo "Generating report for OpenShift $version..."
     ./get_vulnerabilities.py "$version" --format csv \
         --output "$REPORT_DIR/vulns_${version}_$(date +%Y%m%d).csv"
@@ -176,18 +184,18 @@ done
 echo "Reports generated in $REPORT_DIR"
 ```
 
-### Task: Get only critical issues
+### Task: Get only important issues
 ```bash
-./get_vulnerabilities.py 4.12.0 --severity critical --format table
+./get_vulnerabilities.py 4.21 --severity important --format table
 ```
 
 ### Task: Export for external tools
 ```bash
 # Export as JSON for Splunk/ELK/other tools
-./get_vulnerabilities.py 4.12.0 --format json > /var/log/ocp-vulns.json
+./get_vulnerabilities.py 4.21 --format json > /var/log/ocp-vulns.json
 
 # Export as CSV for Excel
-./get_vulnerabilities.sh 4.12.0 csv > vulnerability_report.csv
+./get_vulnerabilities.sh 4.21 csv > vulnerability_report.csv
 ```
 
 ### Task: Monitor specific severity levels
