@@ -24,7 +24,7 @@ vulns/
 ```bash
 ./get_vulnerabilities.sh 4.21
 ./get_vulnerabilities.sh 4.21 csv > report.csv
-./get_vulnerabilities.sh 4.21 json > report.json
+./get_vulnerabilities.sh --cve CVE-2026-46300    # Check if a CVE is fixed
 ```
 
 ### Option 2: Python (Rich CLI)
@@ -32,6 +32,7 @@ vulns/
 ./get_vulnerabilities.py 4.21
 ./get_vulnerabilities.py 4.21 --severity important --format table
 ./get_vulnerabilities.py 4.21 --format stats
+./get_vulnerabilities.py --cve CVE-2026-46300    # Check if a CVE is fixed
 ```
 
 ### Option 3: Advanced Bash (jq-based, fastest)
@@ -42,7 +43,35 @@ vulns/
 
 ---
 
-## 📊 Data Source
+## � CVE Details & Fix Status (NEW!)
+
+Check if a specific CVE is fixed in which OpenShift versions:
+
+```bash
+./get_vulnerabilities.py --cve CVE-2026-46300
+# or
+./get_vulnerabilities.sh --cve CVE-2026-46300
+```
+
+Shows:
+- ✅ Which OpenShift versions have the fix (with advisories)
+- ✅ Which versions are still vulnerable
+- ✅ CVE severity and publication date
+- ✅ Full vulnerability description
+
+Example output:
+```
+Fixed in OpenShift versions:
+  Product: Red Hat OpenShift Container Platform 4.12
+    Advisory: RHSA-2026:21695
+    
+  Product: Red Hat OpenShift Container Platform 4.21
+    Advisory: RHBA-2026:20032
+```
+
+---
+
+## �📊 Data Source
 
 ✅ **Real Red Hat Security API** - Actual vulnerability data for OpenShift versions
 - Uses: `https://access.redhat.com/hydra/rest/securitydata/cve.json`
@@ -103,19 +132,21 @@ done
 
 ## 📋 Output Formats
 
-### Table Format (Default)
+### Table Format (Default - Now Shows Fixed Version!)
 ```
-════════════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════════════════════════════
 OpenShift 4.21 - Vulnerabilities Report
-════════════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════════════════════════════
 
-CVE ID          Severity      Date         Impact              
-────────────────────────────────────────────────────────────────────────────────
-CVE-2026-46300  IMPORTANT     2026-05-13... N/A                 
-CVE-2026-41674  IMPORTANT     2026-05-07... N/A                 
+CVE ID          Severity     Fixed In   Date         Impact                             
+────────────────────────────────────────────────────────────────────────────────────────────────────
+CVE-2026-46300  IMPORTANT    4.12       2026-05-13   N/A                                
+CVE-2026-41674  IMPORTANT    4.2        2026-05-07   N/A                                
 ...
 Total: 27 vulnerabilities found
 ```
+
+**New:** The "Fixed In" column displays the earliest OpenShift version where each vulnerability is fixed!
 
 ### CSV Format
 ```csv

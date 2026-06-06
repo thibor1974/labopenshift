@@ -25,6 +25,9 @@ You have **three** vulnerability scanning scripts:
 # Filter by severity
 ./get_vulnerabilities.sh 4.21 table important
 ./get_vulnerabilities.sh 4.21 csv moderate
+
+# Lookup specific CVE details (NEW!)
+./get_vulnerabilities.sh --cve CVE-2026-46300
 ```
 
 ### Using the Python Script
@@ -41,6 +44,9 @@ You have **three** vulnerability scanning scripts:
 # Filter by severity
 ./get_vulnerabilities.py 4.21 --severity important
 ./get_vulnerabilities.py 4.21 -s moderate -f csv
+
+# Lookup specific CVE details (NEW!)
+./get_vulnerabilities.py --cve CVE-2026-46300
 ```
 
 ### Using the Advanced Bash Script
@@ -55,14 +61,25 @@ You have **three** vulnerability scanning scripts:
 
 ---
 
-## Complete Usage Examples
+## CVE Details & Fix Status (NEW!)
 
-### Example 1: Get all vulnerabilities for OpenShift 4.21
+Check if a specific CVE is fixed in your OpenShift versions:
+
 ```bash
-./get_vulnerabilities.sh 4.21
+# Get detailed information about a CVE
+./get_vulnerabilities.py --cve CVE-2026-46300
+
+# Or using bash
+./get_vulnerabilities.sh --cve CVE-2026-46300
 ```
 
-Output: Human-readable table with CVE details
+Output shows:
+- CVE severity and publication date
+- Which OpenShift versions have the fix
+- Advisory references and package information
+- Full description
+
+## Complete Usage Examples
 
 ### Example 2: Export important vulnerabilities as CSV
 ```bash
@@ -79,27 +96,27 @@ Output: Human-readable table with CVE details
 ./get_vulnerabilities.py 4.21 --format stats
 ```
 
-Output:
-```
-============================================================
-OpenShift 4.21 - Vulnerability Statistics
-============================================================
+### Example 5: Check if a CVE is fixed in your version
+```bash
+# Get full details including which versions have fixes
+./get_vulnerabilities.py --cve CVE-2026-46300
 
-Total Vulnerabilities: 27
-
-By Severity:
-  CRITICAL: 0
-  IMPORTANT: 19
-  MODERATE: 8
-  LOW: 0
+# Or extract just the fix information
+./get_vulnerabilities.sh --cve CVE-2026-46300 | grep -A5 "Fixed in OpenShift"
 ```
 
-### Example 5: Check only important vulnerabilities
+This shows:
+- Severity and publication date
+- Which OpenShift versions have the fix (with advisory IDs)
+- Which versions are still affected
+- Detailed description
+
+### Example 6: Check only important vulnerabilities
 ```bash
 ./get_vulnerabilities.sh 4.21 table important
 ```
 
-### Example 6: Batch check multiple versions
+### Example 7: Batch check multiple versions
 ```bash
 for version in 4.19 4.20 4.21; do
     echo "=== Checking OpenShift $version ==="
@@ -107,7 +124,7 @@ for version in 4.19 4.20 4.21; do
 done
 ```
 
-### Example 7: Create a vulnerability report with timestamp
+### Example 8: Create a vulnerability report with timestamp
 ```bash
 VERSION="4.21"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -128,17 +145,20 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 ## Output Format Reference
 
-### Table Format (Default)
+### Table Format (Default - Now with Fixed Version Info)
 ```
-════════════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════════════════════════════
 OpenShift 4.21 - Vulnerabilities Report
-════════════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════════════════════════════
 
-CVE ID          Severity     Date         Impact              
-────────────────────────────────────────────────────────────────────────────────
-CVE-2026-46300  IMPORTANT    2026-05-13T12:00:00Z N/A                 
-CVE-2026-41674  IMPORTANT    2026-05-07T03:47:51Z N/A                 
+CVE ID          Severity     Fixed In   Date         Impact                             
+────────────────────────────────────────────────────────────────────────────────────────────────────
+CVE-2026-46300  IMPORTANT    4.12       2026-05-13   N/A                                
+CVE-2026-41674  IMPORTANT    4.2        2026-05-07   N/A                                
+CVE-2026-43284  IMPORTANT    4.12       2026-05-07   N/A                                
 ```
+
+The **"Fixed In"** column shows the earliest OpenShift version where the CVE is fixed. This helps you determine which upgrade path resolves the vulnerability.
 
 ### CSV Format
 ```csv
