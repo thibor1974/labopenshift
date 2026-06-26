@@ -1,0 +1,8 @@
+{{- $cm := lookup "v1" "ConfigMap" "openshift-config" "cluster-identity" }}
+{{- if not $cm }}
+{{- fail "Cluster guard: could not read cluster-identity ConfigMap in openshift-config. Either it doesn't exist on this cluster, or the deploying ServiceAccount/user lacks RBAC to read it. Refusing to deploy." }}
+{{- end }}
+{{- $actual := index $cm.data "clusterName" }}
+{{- if ne $actual .Values.cluster.expectedName }}
+{{- fail (printf "Cluster guard: chart is configured for '%s' but target cluster reports '%s'. Aborting deployment." .Values.cluster.expectedName $actual) }}
+{{- end }}
