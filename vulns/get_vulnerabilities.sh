@@ -54,23 +54,50 @@ validate_version() {
     fi
 }
 
+# Curl with retries and fail-on-http-error
+curl_retry() {
+    local url="$1"
+    local out="${2:-/dev/stdout}"
+    local max_attempts=3
+    local attempt=1
+    local sleep_for=1
+
+    while [ $attempt -le $max_attempts ]; do
+        if curl -sS --connect-timeout 10 --max-time 30 -f "$url" -o "$out"; then
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        sleep $sleep_for
+        sleep_for=$((sleep_for * 2))
+    done
+
+    return 22
+}
+
 # Function to fetch and display CVE details
 fetch_cve_details() {
     local cve_id=$1
     echo -e "${BLUE}[*] Fetching details for ${cve_id}...${NC}" >&2
-    
-    curl -s --connect-timeout 10 "https://access.redhat.com/hydra/rest/securitydata/cve/${cve_id}.json" 2>/dev/null | python3 -c "
+
+    tmpf=$(mktemp)
+    if ! curl_retry "https://access.redhat.com/hydra/rest/securitydata/cve/${cve_id}.json" "$tmpf"; then
+        echo -e "${RED}Error: Failed to fetch CVE details for ${cve_id}${NC}" >&2
+        rm -f "$tmpf"
+        return 1
+    fi
+
+    python3 - "$tmpf" <<PY
 import json, sys
 
 try:
-    cve_data = json.load(sys.stdin)
+    cve_data = json.load(open(sys.argv[1]))
 except json.JSONDecodeError as e:
     print(f'Error: Invalid JSON response - {e}', file=sys.stderr)
     sys.exit(1)
 
 print()
 print('═' * 80)
-print(f\"CVE Details: {cve_data.get('name', 'Unknown')}\")
+print(f"CVE Details: {cve_data.get('name', 'Unknown')}")
 print('═' * 80)
 print()
 
@@ -79,8 +106,8 @@ severity = cve_data.get('threat_severity', 'Unknown')
 published = cve_data.get('public_date', 'Unknown')
 print(f'Severity: {severity}')
 print(f'Published: {published}')
-    if cve_data.get('cvss3_scoring_vector'):
-        print(f\"CVSS Vector: {cve_data.get('cvss3_scoring_vector')}\")
+if cve_data.get('cvss3_scoring_vector'):
+    print(f"CVSS Vector: {cve_data.get('cvss3_scoring_vector')}")
 advisories = cve_data.get('advisories') or []
 if advisories:
     print()
@@ -126,8 +153,9 @@ if cve_data.get('details'):
     for detail in cve_data.get('details', []):
         print(f'  {detail}')
     print()
-"
-    
+PY
+    rm -f "$tmpf"
+
     echo -e "${BLUE}[*] CVE lookup complete${NC}" >&2
 }
 
@@ -178,9 +206,16 @@ main() {
     local api_url="https://access.redhat.com/hydra/rest/securitydata/cve.json?product=Red%20Hat%20OpenShift%20Container%20Platform%20${version}&per_page=1000"
     
     echo -e "${BLUE}[*] Fetching vulnerabilities for OpenShift ${version}...${NC}" >&2
-    
+
+    tmpf=$(mktemp)
+    if ! curl_retry "$api_url" "$tmpf"; then
+        echo -e "${RED}Error: Failed to fetch vulnerabilities from API for OpenShift ${version}${NC}" >&2
+        rm -f "$tmpf"
+        return 1
+    fi
+
     # Fetch data and process directly with Python
-    curl -s --connect-timeout 10 "$api_url" 2>/dev/null | python3 -c "
+    python3 - "$tmpf" <<PY
 import json, sys, csv, subprocess
 
 severity_filter = '$severity_filter'.lower()
@@ -233,7 +268,7 @@ def get_fixed_version(cve_id):
     return 'N/A'
 
 try:
-    data = json.load(sys.stdin)
+    data = json.load(open(sys.argv[1]))
 except json.JSONDecodeError as e:
     print(f'Error: Invalid JSON response - {e}', file=sys.stderr)
     data = []
@@ -296,7 +331,7 @@ else:  # table
         print(f'OpenShift {version} - Vulnerabilities Report')
         print('═' * 100)
         print()
-        print(f\"{'CVE ID':<15} {'Severity':<12} {'Fixed In':<10} {'Date':<12} {'Impact':<20} {'Advisories':<35}\")
+        print(f"{'CVE ID':<15} {'Severity':<12} {'Fixed In':<10} {'Date':<12} {'Impact':<20} {'Advisories':<35}")
         print('-' * 130)
         
         for vuln in vulns:
@@ -306,13 +341,14 @@ else:  # table
             impact = vuln.get('impact', 'N/A')[:18]
             fixed_in = get_fixed_version(cve)
             advisories = ";".join(vuln.get('advisories') or [])[:33]
-            print(f\"{cve:<15} {severity:<12} {fixed_in:<10} {date:<12} {impact:<20} {advisories:<35}\")
+            print(f"{cve:<15} {severity:<12} {fixed_in:<10} {date:<12} {impact:<20} {advisories:<35}")
         
         print()
         print(f'Total: {len(vulns)} vulnerabilities found')
         print()
-"
-    
+PY
+    rm -f "$tmpf"
+
     echo -e "${BLUE}[*] Report generation complete${NC}" >&2
 }
 
