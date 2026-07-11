@@ -49,6 +49,11 @@ You have **three** vulnerability scanning scripts:
 ./get_vulnerabilities.py --cve CVE-2026-46300
 ```
 
+Filter by advisory prefixes (RHSA/RHBA):
+```bash
+./get_vulnerabilities.py 4.21 --format json --advisory-prefix RHSA,RHBA | jq '.vulnerabilities[]'
+```
+
 ### Using the Advanced Bash Script
 
 ```bash

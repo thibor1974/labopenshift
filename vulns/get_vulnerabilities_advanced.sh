@@ -23,12 +23,32 @@ usage() {
     exit 1
 }
 
-if [ $# -lt 1 ]; then
+# parse optional flags and positional args
+ADVISORY_PREFIXES=''
+PARSED=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --advisory-prefix)
+            if [ "$#" -lt 2 ]; then
+                echo "Usage: $0 --advisory-prefix PREFIXES <version> [format]" >&2
+                exit 1
+            fi
+            ADVISORY_PREFIXES="$2"
+            shift 2
+            ;;
+        *)
+            PARSED+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [ ${#PARSED[@]} -lt 1 ]; then
     usage
 fi
 
-VERSION=$1
-FORMAT=${2:-table}
+VERSION=${PARSED[0]}
+FORMAT=${PARSED[1]:-table}
 
 # Validate version
 if ! [[ $VERSION =~ ^[0-9]+\.[0-9]+$ ]]; then
@@ -43,15 +63,34 @@ echo -e "${BLUE}[*] Fetching vulnerabilities for OpenShift ${VERSION}...${NC}" >
 # Fetch data
 RESPONSE=$(curl -s --connect-timeout 10 "$API_URL" 2>/dev/null || echo "[]")
 
+# Build jq filter if advisory prefixes provided
+JQ_FILTER='.[]'
+if [ -n "$ADVISORY_PREFIXES" ]; then
+    IFS=, read -r -a PF <<< "$ADVISORY_PREFIXES"
+    regex='^('
+    sep=''
+    for p in "${PF[@]}"; do
+        p=$(echo "$p" | tr '[:lower:]' '[:upper:]')
+        regex="${regex}${sep}${p}-"
+        sep='|'
+    done
+    regex="${regex})"
+    JQ_FILTER=".[] | select(.advisories and (.advisories[] | test(\"${regex}\")))"
+fi
+
 # Check if jq is available
 if command -v jq &> /dev/null; then
     case "$FORMAT" in
         json)
-            echo "$RESPONSE" | jq '.'
+            if [ -n "$ADVISORY_PREFIXES" ]; then
+                echo "$RESPONSE" | jq "[ $JQ_FILTER ]"
+            else
+                echo "$RESPONSE" | jq '.'
+            fi
             ;;
         csv)
             echo "CVE,Severity,Date,Bugzilla,Impact"
-            echo "$RESPONSE" | jq -r '.[] | [.CVE, .severity, .public_date, .bugzilla_id, .impact] | @csv' 2>/dev/null || true
+            echo "$RESPONSE" | jq -r "$JQ_FILTER | [.CVE, .severity, .public_date, .bugzilla_id, .impact] | @csv" 2>/dev/null || true
             ;;
         table|*)
             echo ""
@@ -60,14 +99,14 @@ if command -v jq &> /dev/null; then
             echo "═══════════════════════════════════════════════════════════════════════════════"
             echo ""
             
-            COUNT=$(echo "$RESPONSE" | jq 'length' 2>/dev/null || echo 0)
+                COUNT=$(echo "$RESPONSE" | jq "[ $JQ_FILTER ] | length" 2>/dev/null || echo 0)
             
             if [ "$COUNT" -eq 0 ]; then
                 echo "No vulnerabilities found."
             else
                 echo "CVE ID           Severity      Date"
                 echo "─────────────────────────────────────────────────────────────────────────────"
-                echo "$RESPONSE" | jq -r '.[] | [.CVE, .severity, .public_date] | @tsv' 2>/dev/null || true
+                echo "$RESPONSE" | jq -r "$JQ_FILTER | [.CVE, .severity, .public_date] | @tsv" 2>/dev/null || true
             fi
             
             echo ""
@@ -77,9 +116,11 @@ if command -v jq &> /dev/null; then
     esac
 else
     # Fallback to Python if jq not available
+    export ADV_PREFIXES="$ADVISORY_PREFIXES"
     python3 << PYTHON_EOF
 import json
 import sys
+import os
 
 try:
     data = json.loads('$RESPONSE')
@@ -88,6 +129,13 @@ except:
 
 if isinstance(data, dict):
     data = data.get('data', []) if 'data' in data else []
+
+# Filter by advisory prefixes passed from shell via ADV_PREFIXES
+adv = os.environ.get('ADV_PREFIXES', '').strip()
+if adv:
+    prefixes = tuple(p.strip().upper() for p in adv.split(',') if p.strip())
+    if prefixes:
+        data = [item for item in data if any(a.upper().startswith(prefixes) for a in (item.get('advisories') or []))]
 
 format_type = "$FORMAT"
 

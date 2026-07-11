@@ -79,8 +79,15 @@ severity = cve_data.get('threat_severity', 'Unknown')
 published = cve_data.get('public_date', 'Unknown')
 print(f'Severity: {severity}')
 print(f'Published: {published}')
-if cve_data.get('cvss3_scoring_vector'):
-    print(f\"CVSS Vector: {cve_data.get('cvss3_scoring_vector')}\")
+    if cve_data.get('cvss3_scoring_vector'):
+        print(f\"CVSS Vector: {cve_data.get('cvss3_scoring_vector')}\")
+advisories = cve_data.get('advisories') or []
+if advisories:
+    print()
+    print('Advisories:')
+    print('-' * 80)
+    for advisory in advisories:
+        print(f'  {advisory}')
 print()
 
 # Fixed in versions
@@ -126,6 +133,28 @@ if cve_data.get('details'):
 
 # Main execution
 main() {
+    # Extract optional flags (e.g. --advisory-prefix) and rebuild positional params
+    ADVISORY_PREFIXES=''
+    PARSED_ARGS=()
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --advisory-prefix)
+                if [ "$#" -lt 2 ]; then
+                    echo -e "${RED}Error: --advisory-prefix requires a value (comma-separated prefixes)${NC}" >&2
+                    usage
+                fi
+                ADVISORY_PREFIXES="$2"
+                shift 2
+                ;;
+            *)
+                PARSED_ARGS+=("$1")
+                shift
+                ;;
+        esac
+    done
+    # restore positional parameters for normal processing
+    set -- "${PARSED_ARGS[@]:-}"
+
     # Handle --cve flag
     if [ "$#" -gt 0 ] && [ "$1" = "--cve" ]; then
         if [ "$#" -lt 2 ]; then
@@ -158,6 +187,7 @@ severity_filter = '$severity_filter'.lower()
 output_format = '$output_format'.lower()
 version = '$version'
 cve_cache = {}
+advisory_prefixes = '$ADVISORY_PREFIXES'
 
 def get_fixed_version(cve_id):
     '''Fetch CVE details and extract the earliest fixed version'''
@@ -224,17 +254,25 @@ if severity_filter:
 severity_order = {'critical': 0, 'important': 1, 'moderate': 2, 'low': 3}
 vulns.sort(key=lambda x: severity_order.get(x.get('severity', 'low').lower(), 4))
 
+# Filter by advisory prefixes (passed from shell via --advisory-prefix)
+if advisory_prefixes:
+    prefixes = tuple(p.strip().upper() for p in advisory_prefixes.split(',') if p.strip())
+    if prefixes:
+        vulns = [v for v in vulns if any(a.upper().startswith(prefixes) for a in (v.get('advisories') or []))]
+
 # Output in requested format
 if output_format == 'csv':
-    writer = csv.DictWriter(sys.stdout, fieldnames=['CVE', 'severity', 'public_date', 'bugzilla_id', 'impact'])
+    writer = csv.DictWriter(sys.stdout, fieldnames=['CVE', 'severity', 'public_date', 'bugzilla_id', 'impact', 'advisories'])
     writer.writeheader()
     for vuln in vulns:
+        advisories = vuln.get('advisories') or []
         writer.writerow({
             'CVE': vuln.get('CVE', ''),
             'severity': vuln.get('severity', ''),
             'public_date': vuln.get('public_date', ''),
             'bugzilla_id': vuln.get('bugzilla_id', ''),
-            'impact': vuln.get('impact', '')
+            'impact': vuln.get('impact', ''),
+            'advisories': ';'.join(advisories)
         })
 elif output_format == 'json':
     print(json.dumps({
@@ -258,16 +296,17 @@ else:  # table
         print(f'OpenShift {version} - Vulnerabilities Report')
         print('═' * 100)
         print()
-        print(f\"{'CVE ID':<15} {'Severity':<12} {'Fixed In':<10} {'Date':<12} {'Impact':<35}\")
-        print('-' * 100)
+        print(f\"{'CVE ID':<15} {'Severity':<12} {'Fixed In':<10} {'Date':<12} {'Impact':<20} {'Advisories':<35}\")
+        print('-' * 130)
         
         for vuln in vulns:
             cve = vuln.get('CVE', 'N/A')
             severity = vuln.get('severity', 'N/A').upper()
             date = vuln.get('public_date', 'N/A')[:10]
-            impact = vuln.get('impact', 'N/A')[:33]
+            impact = vuln.get('impact', 'N/A')[:18]
             fixed_in = get_fixed_version(cve)
-            print(f\"{cve:<15} {severity:<12} {fixed_in:<10} {date:<12} {impact:<35}\")
+            advisories = ";".join(vuln.get('advisories') or [])[:33]
+            print(f\"{cve:<15} {severity:<12} {fixed_in:<10} {date:<12} {impact:<20} {advisories:<35}\")
         
         print()
         print(f'Total: {len(vulns)} vulnerabilities found')

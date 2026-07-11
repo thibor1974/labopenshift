@@ -1,7 +1,7 @@
 cluster:
-  expectedName: "crc"
+  expectedName: "crc7"
 namespace:
-  name: toto
+  name: tektutor2
 route:
   host: toto.tektutor2.ocp.lan
 container:

@@ -217,20 +217,19 @@ class VulnerabilityScanner:
             return "\n".join(output)
         
         # Header - with Fixed In column
-        output.append(f"{'CVE ID':<15} {'Severity':<12} {'Fixed In':<10} {'Date':<12} {'Impact':<35}")
-        output.append("-" * 100)
+        output.append(f"{'CVE ID':<15} {'Severity':<12} {'Fixed In':<10} {'Date':<12} {'Impact':<20} {'Advisories':<35}")
+        output.append("-" * 130)
         
         # Rows
         for vuln in vulns:
             cve = vuln.get('CVE', 'N/A')
             severity = vuln.get('severity', 'N/A').upper()
             date = vuln.get('public_date', 'N/A')[:10]  # Truncate to just date
-            impact = vuln.get('impact', 'N/A')[:33]
-            
-            # Fetch fixed version info
+            impact = vuln.get('impact', 'N/A')[:18]
             fixed_in = self.extract_fixed_versions(cve, version)
+            advisories = ';'.join(vuln.get('advisories') or [])[:33]
             
-            output.append(f"{cve:<15} {severity:<12} {fixed_in:<10} {date:<12} {impact:<35}")
+            output.append(f"{cve:<15} {severity:<12} {fixed_in:<10} {date:<12} {impact:<20} {advisories:<35}")
         
         output.append("")
         output.append(f"Total: {len(vulns)} vulnerabilities found")
@@ -244,7 +243,7 @@ class VulnerabilityScanner:
         import io
         
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=['CVE', 'severity', 'public_date', 'bugzilla_id', 'impact'])
+        writer = csv.DictWriter(output, fieldnames=['CVE', 'severity', 'public_date', 'bugzilla_id', 'impact', 'advisories'])
         writer.writeheader()
         
         for vuln in vulns:
@@ -253,7 +252,8 @@ class VulnerabilityScanner:
                 'severity': vuln.get('severity', ''),
                 'public_date': vuln.get('public_date', ''),
                 'bugzilla_id': vuln.get('bugzilla_id', ''),
-                'impact': vuln.get('impact', '')
+                'impact': vuln.get('impact', ''),
+                'advisories': ';'.join(vuln.get('advisories') or [])
             })
         
         return output.getvalue()
@@ -335,6 +335,13 @@ class VulnerabilityScanner:
         output.append(f"Published: {cve_data.get('public_date', 'Unknown')}")
         if cve_data.get('cvss3_scoring_vector'):
             output.append(f"CVSS Vector: {cve_data.get('cvss3_scoring_vector')}")
+        advisories = cve_data.get('advisories') or []
+        if advisories:
+            output.append("")
+            output.append("Advisories:")
+            output.append("-" * 80)
+            for advisory in advisories:
+                output.append(f"  {advisory}")
         output.append("")
         
         # Affected releases (fixed in)
@@ -414,6 +421,10 @@ Examples:
         default=sys.stdout,
         help='Output file (default: stdout)'
     )
+    parser.add_argument(
+        '--advisory-prefix',
+        help='Comma-separated advisory prefixes to include (e.g., RHSA,RHBA)'
+    )
     
     args = parser.parse_args()
     
@@ -448,6 +459,15 @@ Examples:
     # Filter and sort
     vulns = scanner.filter_vulnerabilities(vulns, args.severity)
     vulns = scanner.sort_vulnerabilities(vulns)
+
+    # Filter by advisory prefixes (e.g., RHSA,RHBA)
+    if args.advisory_prefix:
+        prefixes = tuple(p.strip().upper() for p in args.advisory_prefix.split(',') if p.strip())
+        if prefixes:
+            vulns = [
+                v for v in vulns
+                if any(a.upper().startswith(prefixes) for a in (v.get('advisories') or []))
+            ]
     
     # Format output
     if args.format == 'csv':
