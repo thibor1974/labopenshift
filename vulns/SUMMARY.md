@@ -122,6 +122,38 @@ The **In 4.21.17** column (`version_status` in CSV/JSON):
 The data is still fetched for the whole stream (4.21). "VULNERABLE" means the fix came after your release;
 Red Hat does not publish whether an individual earlier release actually shipped the vulnerable code.
 
+### CVEs fixed in a specific release (`--fixed-in`)
+
+List only the CVEs whose fix shipped in exactly that release (release notes style):
+
+```bash
+./get_vulnerabilities.sh --fixed-in 4.21.17               # table
+./get_vulnerabilities.sh --fixed-in 4.21.17 csv important
+./get_vulnerabilities.py --fixed-in 4.21.17 --format json
+```
+
+```
+════════════════════════════════════════════════════════════════════════════════════════════════════
+OpenShift 4.21.17 - CVEs fixed in this release
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+CVE ID           Severity   First Fixed  Fixed In / Status    Advisory         Date        Description
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+CVE-2026-46300   IMPORTANT  4.21.17      4.21.17              RHBA-2026:20032  2026-05-13  kernel: "Fragnesia" is a variant of Dirty Frag vulnerability
+CVE-2026-41674   IMPORTANT  4.21.17      4.21.17              RHSA-2026:20034  2026-05-07  xmldom: xmldom: Arbitrary XML markup injection
+CVE-2026-35469   IMPORTANT  4.21.16      4.21.17              RHSA-2026:20034  2026-04-13  Kubelet: CRI-O: kube-apiserver: Kubelet, CRI-O, kube-apiserv
+CVE-2026-33186   IMPORTANT  4.21.10      4.21.17              RHSA-2026:20034  2026-03-20  google.golang.org/grpc/grpc-go: google.golang.org/grpc/authz
+...
+Total: 7 vulnerabilities found
+Fix status: Fixed: 7
+First fixed in 4.21.17: 3, fixed earlier with more components fixed in 4.21.17: 4
+```
+
+Red Hat often fixes a CVE component by component over several releases, so a CVE is listed if **any** of its
+fixes shipped in that release. **First Fixed** shows when the stream first got a fix (`first_fixed_in` in CSV/JSON,
+empty when it is this release); JSON also has `fix_releases`, the full list of releases/advisories.
+Advisories whose release cannot be determined (a few old ones) cannot be matched; a note on stderr gives the count.
+
 ---
 
 ## 📊 Data Source
@@ -179,6 +211,8 @@ done
 | Statistics | `./get_vulnerabilities.py 4.21 --format stats` |
 | Fixed release per CVE | `./get_vulnerabilities.sh 4.21 csv` |
 | Include unfixed CVEs + status | `./get_vulnerabilities.py 4.21 --include-unfixed` |
+| Is my release exposed? | `./get_vulnerabilities.sh 4.21.17` |
+| CVEs fixed by a release | `./get_vulnerabilities.sh --fixed-in 4.21.17` |
 | Fastest CVE list (no fix info) | `./get_vulnerabilities_advanced.sh 4.21` |
 | Filtering by severity | `./get_vulnerabilities.py 4.21 --severity important` |
 | JSON output | `./get_vulnerabilities.sh 4.21 json` |

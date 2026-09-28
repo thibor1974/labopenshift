@@ -20,11 +20,13 @@
 #   --cve CVE-ID              Fix status of one CVE for every OpenShift version
 #   --advisory-prefix LIST    Only CVEs with advisories starting with LIST (e.g. RHSA,RHBA)
 #   --include-unfixed         Also list CVEs not fixed in this version (slow: a few minutes)
+#   --fixed-in                Only the CVEs fixed in this exact release (version must be like 4.21.17)
 #   --no-fix                  Skip the fix lookups (faster)
 #
 # Examples:
 #   ./get_vulnerabilities.sh 4.21
 #   ./get_vulnerabilities.sh 4.21.17 table important
+#   ./get_vulnerabilities.sh --fixed-in 4.21.17 csv
 #   ./get_vulnerabilities.sh 4.12 csv
 #   ./get_vulnerabilities.sh 4.12 table critical
 #   ./get_vulnerabilities.sh --include-unfixed 4.12 csv important
@@ -51,11 +53,13 @@ usage() {
     echo "  --cve CVE-ID              Fix status of one CVE for every OpenShift version"
     echo "  --advisory-prefix LIST    Only CVEs with advisories starting with LIST (e.g. RHSA,RHBA)"
     echo "  --include-unfixed         Also list CVEs not fixed in this version (slow: a few minutes)"
+    echo "  --fixed-in                Only the CVEs fixed in this exact release (version like 4.21.17)"
     echo "  --no-fix                  Skip the fix lookups (faster)"
     echo ""
     echo "Examples:"
     echo "  $0 4.21"
     echo "  $0 4.21.17 table important"
+    echo "  $0 --fixed-in 4.21.17 csv"
     echo "  $0 4.12 csv"
     echo "  $0 4.12 table critical"
     echo "  $0 --include-unfixed 4.12 csv important"
@@ -70,6 +74,7 @@ error() {
 
 OPTS=()
 POSITIONAL=()
+FIXED_IN=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --cve)
@@ -81,6 +86,10 @@ while [ "$#" -gt 0 ]; do
             [ "$#" -ge 2 ] || error "--advisory-prefix requires a value (comma-separated prefixes)"
             OPTS+=(--advisory-prefix "$2")
             shift 2
+            ;;
+        --fixed-in)
+            FIXED_IN=true
+            shift
             ;;
         --include-unfixed|--no-fix)
             OPTS+=("$1")
@@ -114,6 +123,11 @@ case "$severity_filter" in
     critical|important|moderate|low) OPTS+=(--severity "$severity_filter") ;;
     *) error "Invalid severity '${severity_filter}'. Use critical, important, moderate or low" ;;
 esac
+
+if $FIXED_IN; then
+    [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || error "--fixed-in needs a full release like 4.21.17"
+    OPTS+=(--fixed-in "$version")
+fi
 
 # ${OPTS[@]+...} keeps bash 3.2 (macOS) happy with an empty array under set -u
 exec python3 "$PY_SCRIPT" "$version" --format "$output_format" ${OPTS[@]+"${OPTS[@]}"}
