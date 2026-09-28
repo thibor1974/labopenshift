@@ -4,9 +4,9 @@
 
 You have **three** vulnerability scanning scripts:
 
-1. **get_vulnerabilities.sh** - Bash script (recommended - use Red Hat API)
-2. **get_vulnerabilities_advanced.sh** - Advanced bash with jq support
-3. **get_vulnerabilities.py** - Python version (cross-platform, more features)
+1. **get_vulnerabilities.sh** - Bash wrapper around the Python script (positional args)
+2. **get_vulnerabilities_advanced.sh** - Quick jq-based CVE list (no fix info)
+3. **get_vulnerabilities.py** - Python script holding all the logic (fixed release, fix status, stats)
 
 ---
 
@@ -80,9 +80,37 @@ Check if a specific CVE is fixed in your OpenShift versions:
 
 Output shows:
 - CVE severity and publication date
-- Which OpenShift versions have the fix
-- Advisory references and package information
+- The release that fixes it in each OpenShift version, with the advisory
+- Other OpenShift products and per-package fix states
 - Full description
+
+```
+Fixed in OpenShift Container Platform:
+--------------------------------------------------------------------------------
+  Stream   Fixed In     Advisory
+  4.12     4.12.96      RHSA-2026:54206
+  4.13     4.13.70      RHSA-2026:54188
+  ...
+  4.21     4.21.29      RHSA-2026:54602
+  4.22     4.22.10      RHSA-2026:54770
+```
+
+### Fixed release & fix status per CVE
+
+```bash
+# Every CVE fixed in 4.12, with the 4.12.z release that fixes it
+./get_vulnerabilities.sh 4.12 csv > fixed_4.12.csv
+
+# Also include CVEs NOT fixed in 4.12 (Affected, Fix deferred, Will not fix...) - takes 2-3 minutes
+./get_vulnerabilities.py 4.12 --include-unfixed --format csv > status_4.12.csv
+./get_vulnerabilities.sh --include-unfixed 4.12 table important
+
+# Summary by fix status
+./get_vulnerabilities.py 4.12 --include-unfixed --format stats
+
+# Skip the fix lookups when you only need the CVE list (faster)
+./get_vulnerabilities.py 4.12 --format csv --no-fix
+```
 
 ## Complete Usage Examples
 
@@ -107,7 +135,7 @@ Output shows:
 ./get_vulnerabilities.py --cve CVE-2026-46300
 
 # Or extract just the fix information
-./get_vulnerabilities.sh --cve CVE-2026-46300 | grep -A5 "Fixed in OpenShift"
+./get_vulnerabilities.sh --cve CVE-2026-46300 | grep -A20 "Fixed in OpenShift Container Platform"
 ```
 
 This shows:
@@ -142,42 +170,55 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 | Script | Best For | Language | Speed | Features |
 |--------|----------|----------|-------|----------|
-| **get_vulnerabilities.sh** | General use | Bash | Fast | All formats, good balance |
-| **get_vulnerabilities_advanced.sh** | Fastest execution | Bash | Fastest | jq-based, lightweight |
-| **get_vulnerabilities.py** | Advanced filtering | Python | Fast | Rich CLI, statistics, cross-platform |
+| **get_vulnerabilities.sh** | General use | Bash → Python | ~15s | Same data as .py, positional args |
+| **get_vulnerabilities_advanced.sh** | Quick CVE list | Bash + jq | ~1s | No fixed release / status |
+| **get_vulnerabilities.py** | Everything | Python | ~15s | Fixed release, fix status, stats, `--include-unfixed` |
 
 ---
 
 ## Output Format Reference
 
-### Table Format (Default - with fix advisory)
+### Table Format (Default - with fixed release / fix status)
 ```
 ════════════════════════════════════════════════════════════════════════════════════════════════════
 OpenShift 4.12 - Vulnerabilities Report
 ════════════════════════════════════════════════════════════════════════════════════════════════════
 
-CVE ID           Severity   Fix (4.12)        Date        Description
-----------------------------------------------------------------------------------------------------------------------------------
-CVE-2026-43037   CRITICAL   RHSA-2026:26528   2026-05-01  kernel: ip6_tunnel: clear skb2->cb[] in ip4ip6_err()
-CVE-2023-49569   CRITICAL   RHSA-2024:0832    2024-01-09  go-git: Maliciously crafted Git server replies can lead to path traver
+CVE ID           Severity   Fixed In / Status    Advisory         Date        Description
+--------------------------------------------------------------------------------------------------------------------------------------------
+CVE-2026-43037   CRITICAL   4.12.92              RHSA-2026:26528  2026-05-01  kernel: ip6_tunnel: clear skb2->cb[] in ip4ip6_err()
+CVE-2023-49569   CRITICAL   4.12.50              RHSA-2024:0832   2024-01-09  go-git: Maliciously crafted Git server replies can lead to p
+CVE-2021-4235    MODERATE   4.12.0               RHSA-2022:7398   2022-12-27  go-yaml: Denial of Service in go-yaml
+CVE-2023-0229    MODERATE   Fixed (see adv.)     RHBA-2023:1037   2023-01-12  openshift/apiserver-library-go: Bypass of SCC seccomp profil
+CVE-2026-75887   IMPORTANT  Affected                              2026-09-23  openshift/console: openshift/console: Unauthenticated path t
+CVE-2026-89713   IMPORTANT  Fix deferred                          2026-09-11  kernel: NFSD: check truncate permission under inode lock
 
-Total: 2 vulnerabilities found
-Fix (4.12): advisory fixing the CVE in this stream; '-' = no fix listed, '?' = lookup failed
+Total: 2479 vulnerabilities found
+Fix status: Fix deferred: 1121, Affected: 722, Will not fix: 307, Fixed: 253, Under investigation: 39, Out of support scope: 37
 ```
+(excerpt of `./get_vulnerabilities.py 4.12 --include-unfixed`; without it only the 253 fixed CVEs are listed)
 
-The **"Fix (X.Y)"** column shows the earliest Red Hat advisory that fixes the CVE in the requested stream
-(from the CVE's `affected_release` data). `-` means Red Hat lists no fix for that stream, `?` means the
-per-CVE lookup failed. The API does not expose the exact z-stream (e.g. 4.12.x) a fix shipped in; look up the
-advisory to find it.
+**Fixed In / Status**, per CVE, for the requested version:
 
-> **Note:** the product query returns every CVE associated with the version, **including ones already fixed**.
-> Treat the list as "CVEs relevant to 4.12", not "open vulnerabilities". Also, a CVE's `advisories` list covers
-> all Red Hat products, so `--advisory-prefix` matches advisories from any product, not only this stream.
+| Value | Meaning |
+|-------|---------|
+| `4.12.92` | Earliest 4.12 release containing the fix; **Advisory** is the errata that shipped it |
+| `Fixed (see adv.)` | Fixed, but the release could not be derived from the advisory (a few old/non-release errata) |
+| `Affected`, `Fix deferred`, `Under investigation`, `Will not fix`, `Out of support scope` | Not fixed in this version: Red Hat's status (only with `--include-unfixed`) |
+| `No fix listed` / `Lookup failed` | No fix or status published / the per-CVE API call failed |
+
+How it is computed: the CVE's `affected_release` entries for this stream give the advisory, and the
+advisory's CSAF document (or errata page) gives the release, e.g. `RHSA-2026:54206` → `4.12.96`.
+
+> **Important:** the product query for a version (e.g. 4.12) only returns CVEs Red Hat has **already fixed** in it.
+> To also see CVEs that are **not fixed**, add `--include-unfixed`: it checks the ~4000 CVEs filed against the generic
+> "OpenShift Container Platform 4" product (takes 2-3 minutes). Red Hat publishes that status for "OCP 4" as a whole,
+> not per minor version, so some of those rows concern components the version you asked for may not ship.
 
 ### CSV Format
 ```csv
-CVE,severity,public_date,bugzilla,description,advisories
-CVE-2026-43037,critical,2026-05-01T00:00:00Z,2464351,kernel: ip6_tunnel: clear skb2->cb[] in ip4ip6_err(),RHSA-2026:28741;RHSA-2026:28742;...
+CVE,severity,public_date,fix_status,fixed_in,fix_advisory,bugzilla,description,advisories
+CVE-2026-43037,critical,2026-05-01T00:00:00Z,Fixed,4.12.92,RHSA-2026:26528,2464351,kernel: ip6_tunnel: clear skb2->cb[] in ip4ip6_err(),RHSA-2026:28741;...
 ```
 
 ### JSON Format
