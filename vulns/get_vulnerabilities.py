@@ -9,255 +9,193 @@ import argparse
 import json
 import sys
 import subprocess
-import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import List, Dict, Optional
 
+OCP_PRODUCT = "Red Hat OpenShift Container Platform"
+
+
+class FetchError(Exception):
+    """Raised when the Red Hat API cannot be reached or returns invalid data"""
+
+
 class VulnerabilityScanner:
     """Vulnerability scanner using Red Hat Security API"""
-    
+
     def __init__(self):
         self.api_base = "https://access.redhat.com/hydra/rest/securitydata/cve.json"
         self.cve_detail_base = "https://access.redhat.com/hydra/rest/securitydata/cve"
         self.cve_cache = {}  # Cache CVE details to avoid duplicate API calls
-    
+        self.per_page = 1000
+
     def validate_version(self, version: str) -> bool:
         """Validate version format (e.g., 4.21, 4.12)"""
         parts = version.split('.')
         if len(parts) != 2:
             return False
         return all(part.isdigit() for part in parts)
-    
-    def fetch_vulnerabilities(self, version: str) -> List[Dict]:
-        """Fetch vulnerabilities from Red Hat API"""
-        url = f"{self.api_base}?product=Red%20Hat%20OpenShift%20Container%20Platform%20{version}&per_page=1000"
-        
-        try:
-            print(f"[*] Fetching vulnerabilities for OpenShift {version}...", file=sys.stderr)
-            
-            # Use curl instead of urllib to avoid 403 errors
-            import subprocess
-            result = subprocess.run(
-                ['curl', '-s', '--connect-timeout', '10', url],
-                capture_output=True,
-                text=True,
-                timeout=15
-            )
-            
+
+    def fetch_json(self, url: str, attempts: int = 3, connect_timeout: int = 10, max_time: int = 30):
+        """Fetch a URL with curl (urllib gets 403 errors), retrying on failure.
+        Raises FetchError instead of returning empty data, so an API outage
+        is never reported as "no vulnerabilities"."""
+        error = ""
+        for attempt in range(attempts):
+            if attempt:
+                time.sleep(2 ** (attempt - 1))
+            try:
+                result = subprocess.run(
+                    ['curl', '-sS', '-f', '--connect-timeout', str(connect_timeout),
+                     '--max-time', str(max_time), url],
+                    capture_output=True,
+                    text=True,
+                    timeout=max_time + 5
+                )
+            except subprocess.TimeoutExpired:
+                error = "timeout"
+                continue
             if result.returncode != 0:
-                print(f"[!] Curl error: {result.stderr}", file=sys.stderr)
-                return []
-            
-            data = json.loads(result.stdout)
-            
-            # Handle both list and dict responses
+                error = result.stderr.strip()
+                continue
+            try:
+                return json.loads(result.stdout)
+            except json.JSONDecodeError as e:
+                error = f"invalid JSON response: {e}"
+        raise FetchError(f"{url}: {error}")
+
+    def fetch_vulnerabilities(self, version: str) -> List[Dict]:
+        """Fetch all vulnerabilities for a version from Red Hat API (all pages)"""
+        print(f"[*] Fetching vulnerabilities for OpenShift {version}...", file=sys.stderr)
+        product = f"{OCP_PRODUCT} {version}".replace(' ', '%20')
+        vulns = []
+        page = 1
+        while True:
+            url = f"{self.api_base}?product={product}&per_page={self.per_page}&page={page}"
+            data = self.fetch_json(url)
             if isinstance(data, dict):
-                return data.get('data', []) if 'data' in data else []
-            elif isinstance(data, list):
-                return data
-            else:
-                return []
-        
-        except json.JSONDecodeError:
-            print(f"[!] Error parsing JSON response", file=sys.stderr)
-            return []
-        except Exception as e:
-            print(f"[!] Unexpected error: {e}", file=sys.stderr)
-            return []
-    
+                data = data.get('data', [])
+            if not isinstance(data, list):
+                raise FetchError(f"{url}: unexpected response type {type(data).__name__}")
+            vulns.extend(data)
+            if len(data) < self.per_page:
+                return vulns
+            page += 1
+
     def filter_vulnerabilities(self, vulns: List[Dict], severity: Optional[str] = None) -> List[Dict]:
         """Filter vulnerabilities by severity"""
         if not severity:
             return vulns
-        
+
         severity_lower = severity.lower()
         return [v for v in vulns if v.get('severity', '').lower() == severity_lower]
-    
+
     def sort_vulnerabilities(self, vulns: List[Dict]) -> List[Dict]:
         """Sort vulnerabilities by severity"""
         severity_order = {'critical': 0, 'important': 1, 'moderate': 2, 'low': 3}
         return sorted(vulns, key=lambda x: severity_order.get(x.get('severity', 'low').lower(), 4))
-    
+
     def get_cve_details_cached(self, cve_id: str) -> Optional[Dict]:
         """Fetch CVE details with caching to avoid duplicate API calls"""
-        if cve_id in self.cve_cache:
-            return self.cve_cache[cve_id]
-        
-        url = f"{self.cve_detail_base}/{cve_id}.json"
-        
-        try:
-            result = subprocess.run(
-                ['curl', '-s', '--connect-timeout', '5', url],
-                capture_output=True,
-                text=True,
-                timeout=8
-            )
-            
-            if result.returncode == 0:
-                data = json.loads(result.stdout)
-                self.cve_cache[cve_id] = data
-                return data
-        except:
-            pass
-        
-        return None
-    
-    def _parse_version_from_text(self, text: str) -> Optional[str]:
-        """Extract version-like token from text (e.g., 4.21 or 4.21.12)"""
-        if not text:
-            return None
-        match = re.search(r'\b\d+(?:\.\d+){1,4}\b', text)
-        return match.group(0) if match else None
-    
-    def _version_key(self, version: str):
-        """Build comparable key for dotted numeric versions"""
-        return tuple(int(part) for part in version.split('.'))
-    
-    def _extract_stream_patch_from_package(self, package: str, target_version: str) -> Optional[str]:
-        """Extract target stream patch version from package string when present"""
-        if not package:
-            return None
-        
-        escaped_target = re.escape(target_version)
-        # Match versions like 4.21.12, 4.21.9.6, 4.21.9.6.202605..., v4.21.12, etc.
-        match = re.search(rf'\bv?({escaped_target}(?:\.\d+){{1,4}})\b', package)
-        if match:
-            version = match.group(1)
-            parts = version.split('.')
-            
-            # Drop likely build timestamp suffixes (e.g., 202605110143)
-            if len(parts) > 3 and len(parts[-1]) >= 6:
-                parts = parts[:-1]
-            
-            # Keep at most x.y.z.w for concise display
-            if len(parts) > 4:
-                parts = parts[:4]
-            
-            return ".".join(parts)
-        return None
-    
-    def extract_fixed_versions(self, cve_id: str, target_version: str) -> str:
-        """Extract OpenShift Container Platform fixed version for target stream"""
-        cve_data = self.get_cve_details_cached(cve_id)
-        if not cve_data:
-            return "N/A"
-        
-        # Get affected releases (where it's fixed)
-        affected_releases = cve_data.get('affected_release', [])
-        ocp_releases = [
-            r for r in affected_releases
-            if 'Red Hat OpenShift Container Platform' in r.get('product_name', '')
-        ]
-        
-        if not ocp_releases:
-            return "N/A"
-        
-        target_prefix = f"{target_version}."
-        
-        # Keep only matching stream releases first (e.g., 4.21 / 4.21.x)
-        stream_releases = []
-        for release in ocp_releases:
-            product = release.get('product_name', '')
-            product_version = self._parse_version_from_text(product)
-            if not product_version:
-                continue
-            if product_version == target_version or product_version.startswith(target_prefix):
-                stream_releases.append(release)
-        
-        if not stream_releases:
-            return "N/A"
-        
-        candidate_releases = stream_releases
-        
-        # Prefer patch-level version from package metadata for the selected stream
-        patch_versions = []
-        for release in candidate_releases:
-            package = release.get('package', '')
-            patch_version = self._extract_stream_patch_from_package(package, target_version)
-            if patch_version:
-                patch_versions.append(patch_version)
-        
-        if patch_versions:
+        if cve_id not in self.cve_cache:
             try:
-                patch_versions_sorted = sorted(set(patch_versions), key=self._version_key)
-                return patch_versions_sorted[0]
-            except:
-                return sorted(set(patch_versions))[0]
-        
-        # Fall back to selected product versions
-        product_versions = []
-        for release in candidate_releases:
-            product = release.get('product_name', '')
-            product_version = self._parse_version_from_text(product)
-            if product_version:
-                product_versions.append(product_version)
-        
-        if not product_versions:
-            return "N/A"
-        
-        # Sort versions numerically and return the earliest fix in selected set
+                self.cve_cache[cve_id] = self.fetch_json(
+                    f"{self.cve_detail_base}/{cve_id}.json", attempts=2, connect_timeout=5, max_time=15)
+            except FetchError:
+                self.cve_cache[cve_id] = None
+        return self.cve_cache[cve_id]
+
+    def _advisory_key(self, advisory: str):
+        """Sort key for advisory IDs like RHSA-2026:54206 (year, number)"""
         try:
-            versions_sorted = sorted(set(product_versions), key=self._version_key)
-            return versions_sorted[0]
-        except:
-            return ", ".join(sorted(set(product_versions)))[:30]
-    
+            year, number = advisory.split('-', 1)[1].split(':')
+            return (int(year), int(number))
+        except (IndexError, ValueError):
+            return (9999, 0)
+
+    def extract_fix_advisory(self, cve_id: str, target_version: str) -> str:
+        """Return the earliest advisory fixing the CVE in the target OCP stream.
+        '-' means Red Hat lists no fix for this stream; '?' means the lookup failed."""
+        cve_data = self.get_cve_details_cached(cve_id)
+        if cve_data is None:
+            return "?"
+
+        product_name = f"{OCP_PRODUCT} {target_version}"
+        advisories = {
+            r.get('advisory') for r in cve_data.get('affected_release') or []
+            if r.get('product_name') == product_name and r.get('advisory')
+        }
+        if not advisories:
+            return "-"
+        return min(advisories, key=self._advisory_key)
+
+    def prefetch_cve_details(self, vulns: List[Dict], workers: int = 8):
+        """Fetch CVE details in parallel to fill the cache"""
+        cve_ids = [v.get('CVE') for v in vulns if v.get('CVE')]
+        print(f"[*] Fetching fix status for {len(cve_ids)} CVEs...", file=sys.stderr)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            list(pool.map(self.get_cve_details_cached, cve_ids))
+
     def format_table(self, vulns: List[Dict], version: str) -> str:
-        """Format as human-readable table with fixed version info"""
+        """Format as human-readable table with fix advisory for the target stream"""
         output = []
         output.append("")
         output.append("═" * 100)
         output.append(f"OpenShift {version} - Vulnerabilities Report")
         output.append("═" * 100)
         output.append("")
-        
+
         if not vulns:
             output.append("No vulnerabilities found for the specified criteria.")
             output.append("")
             return "\n".join(output)
-        
-        # Header - with Fixed In column
-        output.append(f"{'CVE ID':<15} {'Severity':<12} {'Fixed In':<10} {'Date':<12} {'Impact':<20} {'Advisories':<35}")
+
+        self.prefetch_cve_details(vulns)
+
+        fix_header = f"Fix ({version})"
+        output.append(f"{'CVE ID':<16} {'Severity':<10} {fix_header:<17} {'Date':<11} {'Description'}")
         output.append("-" * 130)
-        
+
         # Rows
         for vuln in vulns:
             cve = vuln.get('CVE', 'N/A')
             severity = vuln.get('severity', 'N/A').upper()
-            date = vuln.get('public_date', 'N/A')[:10]  # Truncate to just date
-            impact = vuln.get('impact', 'N/A')[:18]
-            fixed_in = self.extract_fixed_versions(cve, version)
-            advisories = ';'.join(vuln.get('advisories') or [])[:33]
-            
-            output.append(f"{cve:<15} {severity:<12} {fixed_in:<10} {date:<12} {impact:<20} {advisories:<35}")
-        
+            date = (vuln.get('public_date') or 'N/A')[:10]  # Truncate to just date
+            description = (vuln.get('bugzilla_description') or '')[:70]
+            fix = self.extract_fix_advisory(cve, version)
+
+            output.append(f"{cve:<16} {severity:<10} {fix:<17} {date:<11} {description}")
+
         output.append("")
         output.append(f"Total: {len(vulns)} vulnerabilities found")
+        output.append(f"Fix ({version}): advisory fixing the CVE in this stream; "
+                      "'-' = no fix listed, '?' = lookup failed")
         output.append("")
-        
+
         return "\n".join(output)
-    
+
     def format_csv(self, vulns: List[Dict]) -> str:
         """Format as CSV"""
         import csv
         import io
-        
+
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=['CVE', 'severity', 'public_date', 'bugzilla_id', 'impact', 'advisories'])
+        writer = csv.DictWriter(output, fieldnames=['CVE', 'severity', 'public_date', 'bugzilla', 'description', 'advisories'])
         writer.writeheader()
-        
+
         for vuln in vulns:
             writer.writerow({
                 'CVE': vuln.get('CVE', ''),
                 'severity': vuln.get('severity', ''),
                 'public_date': vuln.get('public_date', ''),
-                'bugzilla_id': vuln.get('bugzilla_id', ''),
-                'impact': vuln.get('impact', ''),
+                'bugzilla': vuln.get('bugzilla', ''),
+                'description': vuln.get('bugzilla_description', ''),
                 'advisories': ';'.join(vuln.get('advisories') or [])
             })
-        
+
         return output.getvalue()
-    
+
     def format_json(self, vulns: List[Dict], version: str) -> str:
         """Format as JSON"""
         data = {
@@ -268,7 +206,7 @@ class VulnerabilityScanner:
             "source": "Red Hat Security Advisory API"
         }
         return json.dumps(data, indent=2)
-    
+
     def format_stats(self, vulns: List[Dict], version: str) -> str:
         """Generate statistics summary"""
         output = []
@@ -278,49 +216,26 @@ class VulnerabilityScanner:
         output.append("=" * 60)
         output.append("")
         output.append(f"Total Vulnerabilities: {len(vulns)}\n")
-        
+
         if vulns:
             severity_counts = {}
             for vuln in vulns:
                 severity = vuln.get('severity', 'unknown').lower()
                 severity_counts[severity] = severity_counts.get(severity, 0) + 1
-            
+
             output.append("By Severity:")
             for severity in ['critical', 'important', 'moderate', 'low']:
                 count = severity_counts.get(severity, 0)
                 output.append(f"  {severity.upper()}: {count}")
-        
+
         output.append("")
         return "\n".join(output)
 
-    def fetch_cve_details(self, cve_id: str) -> Optional[Dict]:
+    def fetch_cve_details(self, cve_id: str) -> Dict:
         """Fetch details for a specific CVE from Red Hat API"""
-        url = f"{self.cve_detail_base}/{cve_id}.json"
-        
-        try:
-            print(f"[*] Fetching details for {cve_id}...", file=sys.stderr)
-            
-            result = subprocess.run(
-                ['curl', '-s', '--connect-timeout', '10', url],
-                capture_output=True,
-                text=True,
-                timeout=15
-            )
-            
-            if result.returncode != 0:
-                print(f"[!] Curl error: {result.stderr}", file=sys.stderr)
-                return None
-            
-            data = json.loads(result.stdout)
-            return data
-        
-        except json.JSONDecodeError:
-            print(f"[!] Error parsing JSON response", file=sys.stderr)
-            return None
-        except Exception as e:
-            print(f"[!] Unexpected error: {e}", file=sys.stderr)
-            return None
-    
+        print(f"[*] Fetching details for {cve_id}...", file=sys.stderr)
+        return self.fetch_json(f"{self.cve_detail_base}/{cve_id}.json")
+
     def format_cve_details(self, cve_data: Dict) -> str:
         """Format CVE details showing fix status for OpenShift"""
         output = []
@@ -329,25 +244,21 @@ class VulnerabilityScanner:
         output.append(f"CVE Details: {cve_data.get('name', 'Unknown')}")
         output.append("═" * 80)
         output.append("")
-        
+
         # Basic info
         output.append(f"Severity: {cve_data.get('threat_severity', 'Unknown')}")
         output.append(f"Published: {cve_data.get('public_date', 'Unknown')}")
-        if cve_data.get('cvss3_scoring_vector'):
-            output.append(f"CVSS Vector: {cve_data.get('cvss3_scoring_vector')}")
-        advisories = cve_data.get('advisories') or []
-        if advisories:
-            output.append("")
-            output.append("Advisories:")
-            output.append("-" * 80)
-            for advisory in advisories:
-                output.append(f"  {advisory}")
+        cvss3 = cve_data.get('cvss3') or {}
+        if cvss3.get('cvss3_base_score'):
+            output.append(f"CVSS3 Score: {cvss3.get('cvss3_base_score')}")
+        if cvss3.get('cvss3_scoring_vector'):
+            output.append(f"CVSS3 Vector: {cvss3.get('cvss3_scoring_vector')}")
         output.append("")
-        
+
         # Affected releases (fixed in)
-        affected_releases = cve_data.get('affected_release', [])
+        affected_releases = cve_data.get('affected_release') or []
         ocp_releases = [r for r in affected_releases if 'OpenShift' in r.get('product_name', '')]
-        
+
         if ocp_releases:
             output.append("Fixed in OpenShift versions:")
             output.append("-" * 80)
@@ -359,11 +270,11 @@ class VulnerabilityScanner:
                 output.append(f"    Advisory: {advisory}")
                 output.append(f"    Package: {package}")
                 output.append("")
-        
+
         # Not fixed status
-        package_states = cve_data.get('package_state', [])
+        package_states = cve_data.get('package_state') or []
         ocp_states = [p for p in package_states if 'OpenShift' in p.get('product_name', '')]
-        
+
         if ocp_states:
             output.append("Status by OpenShift version:")
             output.append("-" * 80)
@@ -372,7 +283,7 @@ class VulnerabilityScanner:
                 fix_state = state.get('fix_state', 'Unknown')
                 output.append(f"  {product}: {fix_state}")
             output.append("")
-        
+
         # Description
         if cve_data.get('details'):
             output.append("Description:")
@@ -380,7 +291,7 @@ class VulnerabilityScanner:
             for detail in cve_data.get('details', []):
                 output.append(f"  {detail}")
             output.append("")
-        
+
         return "\n".join(output)
 
 
@@ -398,7 +309,7 @@ Examples:
   %(prog)s --cve CVE-2025-1234           # Show fix status for a specific CVE
         '''
     )
-    
+
     parser.add_argument('version', nargs='?', default=None, help='OpenShift version (e.g., 4.21, 4.12)')
     parser.add_argument(
         '--cve',
@@ -425,37 +336,43 @@ Examples:
         '--advisory-prefix',
         help='Comma-separated advisory prefixes to include (e.g., RHSA,RHBA)'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Handle CVE detail lookup mode
     if args.cve:
         scanner = VulnerabilityScanner()
-        cve_data = scanner.fetch_cve_details(args.cve)
-        if cve_data:
-            output = scanner.format_cve_details(cve_data)
-            args.output.write(output)
-            print(f"[*] CVE lookup complete", file=sys.stderr)
-        else:
-            print(f"[!] Could not fetch CVE details", file=sys.stderr)
+        try:
+            cve_data = scanner.fetch_cve_details(args.cve)
+        except FetchError as e:
+            print(f"[!] Could not fetch CVE details: {e}", file=sys.stderr)
             sys.exit(1)
+        args.output.write(scanner.format_cve_details(cve_data))
+        print(f"[*] CVE lookup complete", file=sys.stderr)
         sys.exit(0)
-    
+
     # Handle version-based vulnerability listing mode
     if not args.version:
         parser.print_help()
         sys.exit(1)
-    
+
     # Validate version
     scanner = VulnerabilityScanner()
     if not scanner.validate_version(args.version):
         print(f"Error: Invalid version format '{args.version}'", file=sys.stderr)
         print("Use format like: 4.21 or 4.12", file=sys.stderr)
         sys.exit(1)
-    
+
     # Fetch vulnerabilities
-    vulns = scanner.fetch_vulnerabilities(args.version)
-    
+    try:
+        vulns = scanner.fetch_vulnerabilities(args.version)
+    except FetchError as e:
+        print(f"[!] Failed to fetch vulnerabilities: {e}", file=sys.stderr)
+        sys.exit(1)
+    if not vulns:
+        print(f"[!] Warning: the API returned no CVEs for OpenShift {args.version} "
+              "- check that this version exists", file=sys.stderr)
+
     # Filter and sort
     vulns = scanner.filter_vulnerabilities(vulns, args.severity)
     vulns = scanner.sort_vulnerabilities(vulns)
@@ -468,7 +385,7 @@ Examples:
                 v for v in vulns
                 if any(a.upper().startswith(prefixes) for a in (v.get('advisories') or []))
             ]
-    
+
     # Format output
     if args.format == 'csv':
         output = scanner.format_csv(vulns)
@@ -478,13 +395,13 @@ Examples:
         output = scanner.format_stats(vulns, args.version)
     else:  # table
         output = scanner.format_table(vulns, args.version)
-    
+
     # Write output
     args.output.write(output)
-    
+
     if args.format == 'table':
         print(f"[*] Report generation complete", file=sys.stderr)
-    
+
     sys.exit(0)
 
 

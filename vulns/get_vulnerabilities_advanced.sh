@@ -52,7 +52,7 @@ FORMAT=${PARSED[1]:-table}
 
 # Validate version
 if ! [[ $VERSION =~ ^[0-9]+\.[0-9]+$ ]]; then
-    echo -e "${RED}Error: Invalid version format. Use 4.21 or 4.12${NC}"
+    echo -e "${RED}Error: Invalid version format. Use 4.21 or 4.12${NC}" >&2
     exit 1
 fi
 
@@ -60,37 +60,43 @@ API_URL="https://access.redhat.com/hydra/rest/securitydata/cve.json?product=Red%
 
 echo -e "${BLUE}[*] Fetching vulnerabilities for OpenShift ${VERSION}...${NC}" >&2
 
-# Fetch data
-RESPONSE=$(curl -s --connect-timeout 10 "$API_URL" 2>/dev/null || echo "[]")
-
-# Build jq filter if advisory prefixes provided
-JQ_FILTER='.[]'
-if [ -n "$ADVISORY_PREFIXES" ]; then
-    IFS=, read -r -a PF <<< "$ADVISORY_PREFIXES"
-    regex='^('
-    sep=''
-    for p in "${PF[@]}"; do
-        p=$(echo "$p" | tr '[:lower:]' '[:upper:]')
-        regex="${regex}${sep}${p}-"
-        sep='|'
-    done
-    regex="${regex})"
-    JQ_FILTER=".[] | select(.advisories and (.advisories[] | test(\"${regex}\")))"
+# Fetch data to a temp file; fail loudly instead of reporting an API error as "no vulnerabilities"
+RESPONSE_FILE=$(mktemp)
+trap 'rm -f "$RESPONSE_FILE"' EXIT
+if ! curl -sS -f --retry 2 --connect-timeout 10 --max-time 30 "$API_URL" -o "$RESPONSE_FILE"; then
+    echo -e "${RED}Error: Failed to fetch vulnerabilities from API for OpenShift ${VERSION}${NC}" >&2
+    exit 1
 fi
 
 # Check if jq is available
 if command -v jq &> /dev/null; then
+    if ! jq -e 'type == "array"' "$RESPONSE_FILE" > /dev/null 2>&1; then
+        echo -e "${RED}Error: Unexpected API response (not a JSON array)${NC}" >&2
+        exit 1
+    fi
+
+    # Advisory prefix filter: any() keeps each CVE once, however many advisories match
+    PREFIX_REGEX=''
+    if [ -n "$ADVISORY_PREFIXES" ]; then
+        IFS=, read -r -a PF <<< "$ADVISORY_PREFIXES"
+        for p in "${PF[@]}"; do
+            p=$(echo "$p" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+            [ -n "$p" ] && PREFIX_REGEX="${PREFIX_REGEX:+${PREFIX_REGEX}|}${p}"
+        done
+    fi
+    JQ_FILTER='.[] | select($re == "" or any(.advisories[]?; test("^(" + $re + ")"; "i")))'
+    jq_run() { jq --arg re "$PREFIX_REGEX" "$@" "$RESPONSE_FILE"; }
+
+    COUNT=$(jq_run "[ $JQ_FILTER ] | length")
+    [ "$COUNT" -eq 0 ] && echo -e "[!] Warning: no CVEs matched for OpenShift ${VERSION} - check that this version exists" >&2
+
     case "$FORMAT" in
         json)
-            if [ -n "$ADVISORY_PREFIXES" ]; then
-                echo "$RESPONSE" | jq "[ $JQ_FILTER ]"
-            else
-                echo "$RESPONSE" | jq '.'
-            fi
+            jq_run "[ $JQ_FILTER ]"
             ;;
         csv)
-            echo "CVE,Severity,Date,Bugzilla,Impact"
-            echo "$RESPONSE" | jq -r "$JQ_FILTER | [.CVE, .severity, .public_date, .bugzilla_id, .impact] | @csv" 2>/dev/null || true
+            echo "CVE,Severity,Date,Bugzilla,Description"
+            jq_run -r "$JQ_FILTER | [.CVE, .severity, .public_date, .bugzilla, .bugzilla_description] | @csv"
             ;;
         table|*)
             echo ""
@@ -98,37 +104,40 @@ if command -v jq &> /dev/null; then
             echo "OpenShift ${VERSION} - Vulnerabilities Report"
             echo "═══════════════════════════════════════════════════════════════════════════════"
             echo ""
-            
-                COUNT=$(echo "$RESPONSE" | jq "[ $JQ_FILTER ] | length" 2>/dev/null || echo 0)
-            
+
             if [ "$COUNT" -eq 0 ]; then
                 echo "No vulnerabilities found."
             else
-                echo "CVE ID           Severity      Date"
+                printf '%-16s %-10s %s\n' "CVE ID" "Severity" "Date"
                 echo "─────────────────────────────────────────────────────────────────────────────"
-                echo "$RESPONSE" | jq -r "$JQ_FILTER | [.CVE, .severity, .public_date] | @tsv" 2>/dev/null || true
+                jq_run -r "$JQ_FILTER | [.CVE, .severity, (.public_date // \"\")[0:10]] | @tsv" |
+                    while IFS=$'\t' read -r cve sev date; do
+                        printf '%-16s %-10s %s\n' "$cve" "$sev" "$date"
+                    done
             fi
-            
+
             echo ""
             echo "Total: $COUNT vulnerabilities found"
             echo ""
             ;;
     esac
 else
-    # Fallback to Python if jq not available
-    export ADV_PREFIXES="$ADVISORY_PREFIXES"
-    python3 << PYTHON_EOF
+    # Fallback to Python if jq not available (data read from the temp file, values via env)
+    ADV_PREFIXES="$ADVISORY_PREFIXES" FORMAT="$FORMAT" OCP_VERSION="$VERSION" \
+    python3 - "$RESPONSE_FILE" << 'PYTHON_EOF'
+import csv
 import json
-import sys
 import os
+import sys
 
 try:
-    data = json.loads('$RESPONSE')
-except:
-    data = []
+    data = json.load(open(sys.argv[1]))
+except json.JSONDecodeError as e:
+    print(f"Error: Invalid JSON response - {e}", file=sys.stderr)
+    sys.exit(1)
 
 if isinstance(data, dict):
-    data = data.get('data', []) if 'data' in data else []
+    data = data.get('data', [])
 
 # Filter by advisory prefixes passed from shell via ADV_PREFIXES
 adv = os.environ.get('ADV_PREFIXES', '').strip()
@@ -137,37 +146,37 @@ if adv:
     if prefixes:
         data = [item for item in data if any(a.upper().startswith(prefixes) for a in (item.get('advisories') or []))]
 
-format_type = "$FORMAT"
+if not data:
+    print(f"[!] Warning: no CVEs matched for OpenShift {os.environ['OCP_VERSION']} - check that this version exists", file=sys.stderr)
+
+format_type = os.environ['FORMAT']
 
 if format_type == "csv":
-    print("CVE,Severity,Date,Bugzilla,Impact")
+    writer = csv.writer(sys.stdout)
+    writer.writerow(["CVE", "Severity", "Date", "Bugzilla", "Description"])
     for item in data:
-        cve = item.get('CVE', '')
-        severity = item.get('severity', '')
-        date = item.get('public_date', '')
-        bugzilla = item.get('bugzilla_id', '')
-        impact = item.get('impact', '').replace(',', ';')
-        print(f'{cve},{severity},{date},{bugzilla},"{impact}"')
+        writer.writerow([item.get('CVE', ''), item.get('severity', ''), item.get('public_date', ''),
+                         item.get('bugzilla', ''), item.get('bugzilla_description', '')])
 elif format_type == "json":
     print(json.dumps(data, indent=2))
 else:  # table
     print()
     print("═" * 80)
-    print("OpenShift $VERSION - Vulnerabilities Report")
+    print(f"OpenShift {os.environ['OCP_VERSION']} - Vulnerabilities Report")
     print("═" * 80)
     print()
-    
+
     if not data:
         print("No vulnerabilities found.")
     else:
-        print(f"{'CVE ID':<15} {'Severity':<12} {'Date':<12}")
+        print(f"{'CVE ID':<16} {'Severity':<10} {'Date'}")
         print("-" * 80)
         for item in data:
             cve = item.get('CVE', 'N/A')
-            severity = item.get('severity', 'N/A').upper()
-            date = item.get('public_date', 'N/A')
-            print(f"{cve:<15} {severity:<12} {date:<12}")
-    
+            severity = item.get('severity', 'N/A')
+            date = (item.get('public_date') or 'N/A')[:10]
+            print(f"{cve:<16} {severity:<10} {date}")
+
     print()
     print(f"Total: {len(data)} vulnerabilities found")
     print()

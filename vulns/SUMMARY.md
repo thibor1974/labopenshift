@@ -132,27 +132,34 @@ done
 
 ## 📋 Output Formats
 
-### Table Format (Default - Now Shows Fixed Version!)
+### Table Format (Default - with fix advisory)
 ```
 ════════════════════════════════════════════════════════════════════════════════════════════════════
-OpenShift 4.21 - Vulnerabilities Report
+OpenShift 4.12 - Vulnerabilities Report
 ════════════════════════════════════════════════════════════════════════════════════════════════════
 
-CVE ID          Severity     Fixed In   Date         Impact                             
-────────────────────────────────────────────────────────────────────────────────────────────────────
-CVE-2026-46300  IMPORTANT    4.12       2026-05-13   N/A                                
-CVE-2026-41674  IMPORTANT    4.2        2026-05-07   N/A                                
-...
-Total: 27 vulnerabilities found
+CVE ID           Severity   Fix (4.12)        Date        Description
+----------------------------------------------------------------------------------------------------------------------------------
+CVE-2026-43037   CRITICAL   RHSA-2026:26528   2026-05-01  kernel: ip6_tunnel: clear skb2->cb[] in ip4ip6_err()
+CVE-2023-49569   CRITICAL   RHSA-2024:0832    2024-01-09  go-git: Maliciously crafted Git server replies can lead to path traver
+
+Total: 2 vulnerabilities found
+Fix (4.12): advisory fixing the CVE in this stream; '-' = no fix listed, '?' = lookup failed
 ```
 
-**New:** The "Fixed In" column displays the earliest OpenShift version where each vulnerability is fixed!
+The **"Fix (X.Y)"** column shows the earliest Red Hat advisory that fixes the CVE in the requested stream
+(from the CVE's `affected_release` data). `-` means Red Hat lists no fix for that stream, `?` means the
+per-CVE lookup failed. The API does not expose the exact z-stream (e.g. 4.12.x) a fix shipped in; look up the
+advisory to find it.
+
+> **Note:** the product query returns every CVE associated with the version, **including ones already fixed**.
+> Treat the list as "CVEs relevant to 4.12", not "open vulnerabilities". Also, a CVE's `advisories` list covers
+> all Red Hat products, so `--advisory-prefix` matches advisories from any product, not only this stream.
 
 ### CSV Format
 ```csv
-CVE,severity,public_date,bugzilla_id,impact
-CVE-2026-46300,important,2026-05-13T12:00:00Z,,
-CVE-2026-41674,important,2026-05-07T03:47:51Z,,
+CVE,severity,public_date,bugzilla,description,advisories
+CVE-2026-43037,critical,2026-05-01T00:00:00Z,2464351,kernel: ip6_tunnel: clear skb2->cb[] in ip4ip6_err(),RHSA-2026:28741;RHSA-2026:28742;...
 ```
 
 ### JSON Format
@@ -272,8 +279,9 @@ spec:
 ✓ All scripts produce real output  
 ✓ Fetches from official Red Hat Security API  
 ✓ Multiple output formats (table, CSV, JSON, stats)  
-✓ Severity filtering (important, moderate, low)  
-✓ Fast performance (<5 seconds typically)  
+✓ Severity filtering (critical, important, moderate, low)  
+✓ Exits with code 1 (never an empty report) when the API is unreachable  
+✓ Table view ~10 seconds (per-CVE fix lookups run in parallel); CSV/JSON/stats ~1-2 seconds  
 ✓ Works on macOS and Linux  
 
 ---
@@ -284,257 +292,3 @@ For more information:
 - Red Hat Security: https://access.redhat.com/security/
 - OpenShift Documentation: https://docs.openshift.com/
 - CVE Database: https://cve.mitre.org/
-
----
-
-## 📊 Key Features
-
-✅ **Multiple Output Formats**
-- Table (human-readable with colors)
-- CSV (for Excel/data analysis)
-- JSON (for programmatic use)
-- Statistics (summary view)
-
-✅ **Filtering Capabilities**
-- Filter by OpenShift version
-- Filter by severity level (critical, high, medium, low)
-- Version range matching (e.g., 4.12.0-4.12.10)
-
-✅ **Data Sources**
-- Red Hat Security Advisories API
-- National Vulnerability Database (NVD)
-- Local sample data (for demo/testing)
-- Can be extended with custom sources
-
-✅ **Production-Ready**
-- Color-coded output
-- Error handling
-- Version validation
-- Caching support
-- Cross-platform (Linux/macOS)
-
----
-
-## 📖 Usage Examples
-
-### List all vulnerabilities for a version
-```bash
-./get_vulnerabilities.py 4.12.0
-```
-
-### Get critical vulnerabilities only
-```bash
-./get_vulnerabilities.py 4.12.0 --severity critical
-./get_vulnerabilities.sh 4.12.0 table critical
-```
-
-### Export for reporting
-```bash
-./get_vulnerabilities.py 4.12.0 --format csv > vulnerabilities.csv
-./get_vulnerabilities.sh 4.12.0 json > data.json
-```
-
-### Generate statistics
-```bash
-./get_vulnerabilities.py 4.12.0 --format stats
-```
-
-### Batch process multiple versions
-```bash
-for version in 4.10.0 4.11.0 4.12.0; do
-    ./get_vulnerabilities.py $version --format csv > vuln_$version.csv
-done
-```
-
----
-
-## 🔧 Which Script to Use?
-
-| Need | Use |
-|------|-----|
-| Quick vulnerability check | `get_vulnerabilities.py` |
-| Simple bash automation | `get_vulnerabilities.sh` |
-| Parse Red Hat OVAL data | `get_vulnerabilities_advanced.sh` |
-| Integration with other tools | `get_vulnerabilities.py --format json` |
-| Export to Excel | `get_vulnerabilities.sh 4.12.0 csv` |
-
----
-
-## 📝 Sample Data Included
-
-The scripts include sample vulnerability data for demonstration:
-
-- **CVE-2024-1234**: Kubernetes Engine Vulnerability (HIGH)
-- **CVE-2024-5678**: API Server DoS (HIGH)  
-- **CVE-2023-9101**: CLI Path Traversal (MEDIUM)
-- **CVE-2024-1111**: Storage Plugin Integer Overflow (CRITICAL)
-
-This allows testing without requiring network access.
-
----
-
-## 🔌 Integration Examples
-
-### Jenkins Pipeline
-```groovy
-stage('Scan Vulnerabilities') {
-    steps {
-        sh './get_vulnerabilities.py ${OCP_VERSION} --format json > vulns.json'
-    }
-}
-```
-
-### Cron Job (Daily Scans)
-```bash
-#!/bin/bash
-REPORT_DIR="./vulnerability_reports"
-mkdir -p "$REPORT_DIR"
-
-for version in 4.10.0 4.11.0 4.12.0; do
-    ./get_vulnerabilities.sh $version csv > \
-        "$REPORT_DIR/vulns_${version}_$(date +%Y%m%d).csv"
-done
-```
-
-### Kubernetes CronJob
-```yaml
-spec:
-  schedule: "0 2 * * *"  # Daily at 2 AM
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: scanner
-            command: [./get_vulnerabilities.sh, 4.12.0, csv]
-```
-
----
-
-## 📋 Output Formats
-
-### Table
-```
-═════════════════════════════════════════════════════
-CVE ID          Severity   Score    Published
-─────────────────────────────────────────────────────
-CVE-2024-1111   CRITICAL   9.8      2024-01-20
-  Title: OpenShift Storage Plugin Integer Overflow
-  Fixed in: 4.11.21, 4.12.6
-```
-
-### CSV
-```csv
-CVE ID,Title,Severity,Score,Published,Fixed Versions
-CVE-2024-1111,OpenShift Storage Plugin...,critical,9.8,2024-01-20,"4.11.21;4.12.6"
-```
-
-### JSON
-```json
-{
-  "version": "4.12.0",
-  "count": 3,
-  "vulnerabilities": [
-    {"id": "CVE-2024-1111", "severity": "critical", ...}
-  ]
-}
-```
-
----
-
-## 🎯 Common Tasks
-
-### Create Weekly Vulnerability Report
-```bash
-#!/bin/bash
-./get_vulnerabilities.py 4.12.0 --format csv \
-    > "vulnerability_report_$(date +%Y%m%d).csv"
-```
-
-### Find All Critical Issues
-```bash
-./get_vulnerabilities.py 4.12.0 --severity critical --format table
-```
-
-### Monitor for New Vulnerabilities
-```bash
-CURRENT=$(./get_vulnerabilities.py 4.12.0 --format json | jq '.count')
-if [ "$CURRENT" -gt 0 ]; then
-    echo "ALERT: $CURRENT vulnerabilities found!"
-fi
-```
-
-### Export for Security Dashboard
-```bash
-./get_vulnerabilities.py 4.12.0 --format json | \
-    curl -X POST http://dashboard.local/api/vulns -d @-
-```
-
----
-
-## 🔍 Advanced Features
-
-### Extend with Custom Data
-Edit the vulnerability database in either script to add your own data.
-
-### Parse Official Red Hat Data
-Use `get_vulnerabilities_advanced.sh` to parse Red Hat's official OVAL security feed.
-
-### Cache Remote Data
-The advanced script automatically caches Red Hat data for 24 hours.
-
-### Severity Filtering
-Quickly focus on critical issues:
-```bash
-./get_vulnerabilities.py 4.12.0 --severity critical
-```
-
----
-
-## ⚠️ Known Limitations
-
-- Sample data is included for demo purposes
-- Remote data sources require internet connectivity
-- Some APIs may have rate limiting
-- Red Hat data requires proper authentication in production
-
----
-
-## 📚 Documentation
-
-- **QUICK_REFERENCE.md** - Copy-paste examples and quick answers
-- **VULNERABILITIES_README.md** - Full detailed documentation
-- Run `./get_vulnerabilities.py --help` for help
-
----
-
-## 🚀 Next Steps
-
-1. **Test it out:**
-   ```bash
-   ./get_vulnerabilities.py 4.12.0
-   ```
-
-2. **Try different formats:**
-   ```bash
-   ./get_vulnerabilities.sh 4.12.0 csv
-   ```
-
-3. **Filter by severity:**
-   ```bash
-   ./get_vulnerabilities.py 4.12.0 --severity critical
-   ```
-
-4. **Integrate into your automation:**
-   - Add to CI/CD pipelines
-   - Schedule regular scans
-   - Export for compliance reports
-
----
-
-## 📞 Support
-
-For more information:
-- Red Hat Security: https://access.redhat.com/security/
-- OpenShift Documentation: https://docs.openshift.com/
-- CVE Search: https://cve.mitre.org/

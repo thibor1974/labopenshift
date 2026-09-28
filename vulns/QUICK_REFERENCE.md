@@ -150,26 +150,34 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 ## Output Format Reference
 
-### Table Format (Default - Now with Fixed Version Info)
+### Table Format (Default - with fix advisory)
 ```
 ════════════════════════════════════════════════════════════════════════════════════════════════════
-OpenShift 4.21 - Vulnerabilities Report
+OpenShift 4.12 - Vulnerabilities Report
 ════════════════════════════════════════════════════════════════════════════════════════════════════
 
-CVE ID          Severity     Fixed In   Date         Impact                             
-────────────────────────────────────────────────────────────────────────────────────────────────────
-CVE-2026-46300  IMPORTANT    4.12       2026-05-13   N/A                                
-CVE-2026-41674  IMPORTANT    4.2        2026-05-07   N/A                                
-CVE-2026-43284  IMPORTANT    4.12       2026-05-07   N/A                                
+CVE ID           Severity   Fix (4.12)        Date        Description
+----------------------------------------------------------------------------------------------------------------------------------
+CVE-2026-43037   CRITICAL   RHSA-2026:26528   2026-05-01  kernel: ip6_tunnel: clear skb2->cb[] in ip4ip6_err()
+CVE-2023-49569   CRITICAL   RHSA-2024:0832    2024-01-09  go-git: Maliciously crafted Git server replies can lead to path traver
+
+Total: 2 vulnerabilities found
+Fix (4.12): advisory fixing the CVE in this stream; '-' = no fix listed, '?' = lookup failed
 ```
 
-The **"Fixed In"** column shows the earliest OpenShift version where the CVE is fixed. This helps you determine which upgrade path resolves the vulnerability.
+The **"Fix (X.Y)"** column shows the earliest Red Hat advisory that fixes the CVE in the requested stream
+(from the CVE's `affected_release` data). `-` means Red Hat lists no fix for that stream, `?` means the
+per-CVE lookup failed. The API does not expose the exact z-stream (e.g. 4.12.x) a fix shipped in; look up the
+advisory to find it.
+
+> **Note:** the product query returns every CVE associated with the version, **including ones already fixed**.
+> Treat the list as "CVEs relevant to 4.12", not "open vulnerabilities". Also, a CVE's `advisories` list covers
+> all Red Hat products, so `--advisory-prefix` matches advisories from any product, not only this stream.
 
 ### CSV Format
 ```csv
-CVE,severity,public_date,bugzilla_id,impact
-CVE-2026-46300,important,2026-05-13T12:00:00Z,,
-CVE-2026-41674,important,2026-05-07T03:47:51Z,,
+CVE,severity,public_date,bugzilla,description,advisories
+CVE-2026-43037,critical,2026-05-01T00:00:00Z,2464351,kernel: ip6_tunnel: clear skb2->cb[] in ip4ip6_err(),RHSA-2026:28741;RHSA-2026:28742;...
 ```
 
 ### JSON Format
@@ -182,8 +190,10 @@ CVE-2026-41674,important,2026-05-07T03:47:51Z,,
       "CVE": "CVE-2026-46300",
       "severity": "important",
       "public_date": "2026-05-13T12:00:00Z",
-      "bugzilla_id": "",
-      "impact": "N/A"
+      "advisories": ["RHSA-2026:21695", "..."],
+      "bugzilla": "2477015",
+      "bugzilla_description": "kernel: ...",
+      "resource_url": "https://access.redhat.com/hydra/rest/securitydata/cve/CVE-2026-46300.json"
     }
   ],
   "source": "Red Hat Security Advisory API"
@@ -254,22 +264,14 @@ chmod +x get_vulnerabilities.py
 python3 --version
 
 # Or use the bash version instead
-./get_vulnerabilities.sh 4.12.0
-```
-
-### "No module named packaging"
-```bash
-# For enhanced version comparison in bash script
-pip install packaging
-
-# Bash script will work without it, but with reduced accuracy
+./get_vulnerabilities.sh 4.12
 ```
 
 ### Network issues when fetching data
 ```bash
-# Scripts work with local data if network is unavailable
-# Remote data sources will gracefully fall back to local samples
-./get_vulnerabilities.sh 4.12.0
+# All scripts retry failed requests, then exit with code 1 and an error on stderr.
+# A network/API failure never produces an empty report.
+curl -sSf 'https://access.redhat.com/hydra/rest/securitydata/cve.json?per_page=1' >/dev/null && echo "API reachable"
 ```
 
 ---
@@ -314,7 +316,7 @@ spec:
             - /bin/bash
             - -c
             - |
-              ./get_vulnerabilities.sh 4.12.0 csv > /reports/vulns_$(date +%Y%m%d).csv
+              ./get_vulnerabilities.sh 4.12 csv > /reports/vulns_$(date +%Y%m%d).csv
             volumeMounts:
             - name: reports
               mountPath: /reports

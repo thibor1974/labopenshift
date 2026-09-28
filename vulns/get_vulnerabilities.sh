@@ -21,6 +21,10 @@
 
 set -euo pipefail
 
+# Remove the temp file even when Python exits with an error (set -e)
+tmpf=''
+trap 'rm -f "$tmpf"' EXIT
+
 # Color codes for output
 RED='\033[0;31m'
 BLUE='\033[0;34m'
@@ -86,7 +90,7 @@ fetch_cve_details() {
         return 1
     fi
 
-    python3 - "$tmpf" <<PY
+    python3 - "$tmpf" <<'PY'
 import json, sys
 
 try:
@@ -106,19 +110,15 @@ severity = cve_data.get('threat_severity', 'Unknown')
 published = cve_data.get('public_date', 'Unknown')
 print(f'Severity: {severity}')
 print(f'Published: {published}')
-if cve_data.get('cvss3_scoring_vector'):
-    print(f"CVSS Vector: {cve_data.get('cvss3_scoring_vector')}")
-advisories = cve_data.get('advisories') or []
-if advisories:
-    print()
-    print('Advisories:')
-    print('-' * 80)
-    for advisory in advisories:
-        print(f'  {advisory}')
+cvss3 = cve_data.get('cvss3') or {}
+if cvss3.get('cvss3_base_score'):
+    print(f"CVSS3 Score: {cvss3.get('cvss3_base_score')}")
+if cvss3.get('cvss3_scoring_vector'):
+    print(f"CVSS3 Vector: {cvss3.get('cvss3_scoring_vector')}")
 print()
 
 # Fixed in versions
-affected_releases = cve_data.get('affected_release', [])
+affected_releases = cve_data.get('affected_release') or []
 ocp_releases = [r for r in affected_releases if 'OpenShift' in r.get('product_name', '')]
 
 if ocp_releases:
@@ -134,7 +134,7 @@ if ocp_releases:
         print()
 
 # Status by version
-package_states = cve_data.get('package_state', [])
+package_states = cve_data.get('package_state') or []
 ocp_states = [p for p in package_states if 'OpenShift' in p.get('product_name', '')]
 
 if ocp_states:
@@ -189,6 +189,10 @@ main() {
             echo -e "${RED}Error: --cve requires a CVE ID${NC}" >&2
             usage
         fi
+        if ! [[ $2 =~ ^CVE-[0-9]{4}-[0-9]+$ ]]; then
+            echo -e "${RED}Error: Invalid CVE ID '$2'. Use format like CVE-2026-46300${NC}" >&2
+            exit 1
+        fi
         fetch_cve_details "$2"
         return 0
     fi
@@ -202,7 +206,16 @@ main() {
     fi
     
     validate_version "$version"
-    
+
+    case "$output_format" in
+        table|csv|json) ;;
+        *) echo -e "${RED}Error: Invalid format '${output_format}'. Use table, csv or json${NC}" >&2; exit 1 ;;
+    esac
+    case "$severity_filter" in
+        ''|critical|important|moderate|low) ;;
+        *) echo -e "${RED}Error: Invalid severity '${severity_filter}'. Use critical, important, moderate or low${NC}" >&2; exit 1 ;;
+    esac
+
     local api_url="https://access.redhat.com/hydra/rest/securitydata/cve.json?product=Red%20Hat%20OpenShift%20Container%20Platform%20${version}&per_page=1000"
     
     echo -e "${BLUE}[*] Fetching vulnerabilities for OpenShift ${version}...${NC}" >&2
@@ -214,72 +227,65 @@ main() {
         return 1
     fi
 
-    # Fetch data and process directly with Python
-    python3 - "$tmpf" <<PY
-import json, sys, csv, subprocess
+    # Process with Python. Values are passed via the environment (never pasted
+    # into the code) and the heredoc is quoted so the shell does not expand it.
+    SEVERITY_FILTER="$severity_filter" OUTPUT_FORMAT="$output_format" OCP_VERSION="$version" \
+    ADVISORY_PREFIXES="$ADVISORY_PREFIXES" python3 - "$tmpf" <<'PY'
+import json, os, sys, csv, subprocess
+from concurrent.futures import ThreadPoolExecutor
 
-severity_filter = '$severity_filter'.lower()
-output_format = '$output_format'.lower()
-version = '$version'
-cve_cache = {}
-advisory_prefixes = '$ADVISORY_PREFIXES'
+severity_filter = os.environ['SEVERITY_FILTER'].lower()
+output_format = os.environ['OUTPUT_FORMAT'].lower()
+version = os.environ['OCP_VERSION']
+advisory_prefixes = os.environ['ADVISORY_PREFIXES']
+product_name = f'Red Hat OpenShift Container Platform {version}'
 
-def get_fixed_version(cve_id):
-    '''Fetch CVE details and extract the earliest fixed version'''
-    if cve_id in cve_cache:
-        return cve_cache[cve_id]
-    
+def fetch_detail(cve_id):
+    '''Fetch CVE details (None on failure)'''
     try:
         result = subprocess.run(
-            ['curl', '-s', '--connect-timeout', '3', 
+            ['curl', '-sS', '-f', '--retry', '2', '--connect-timeout', '5', '--max-time', '15',
              f'https://access.redhat.com/hydra/rest/securitydata/cve/{cve_id}.json'],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        
+            capture_output=True, text=True, timeout=60)
         if result.returncode == 0:
-            cve_data = json.loads(result.stdout)
-            affected_releases = cve_data.get('affected_release', [])
-            ocp_releases = [r for r in affected_releases if 'OpenShift' in r.get('product_name', '')]
-            
-            if ocp_releases:
-                versions = []
-                for release in ocp_releases:
-                    product = release.get('product_name', '')
-                    parts = product.split()
-                    if parts and parts[-1][0].isdigit():
-                        version_str = parts[-1]
-                        if version_str not in versions:
-                            versions.append(version_str)
-                
-                if versions:
-                    try:
-                        versions_sorted = sorted(versions, key=lambda x: tuple(map(int, x.split('.'))))
-                        fixed = versions_sorted[0]
-                        cve_cache[cve_id] = fixed
-                        return fixed
-                    except:
-                        pass
-    except:
+            return json.loads(result.stdout)
+    except (subprocess.TimeoutExpired, json.JSONDecodeError):
         pass
-    
-    cve_cache[cve_id] = 'N/A'
-    return 'N/A'
+    return None
+
+def advisory_key(advisory):
+    '''Sort key for advisory IDs like RHSA-2026:54206 (year, number)'''
+    try:
+        year, number = advisory.split('-', 1)[1].split(':')
+        return (int(year), int(number))
+    except (IndexError, ValueError):
+        return (9999, 0)
+
+def fix_advisory(cve_data):
+    '''Earliest advisory fixing the CVE in the target stream ('-' none listed, '?' lookup failed)'''
+    if cve_data is None:
+        return '?'
+    advisories = {r.get('advisory') for r in cve_data.get('affected_release') or []
+                  if r.get('product_name') == product_name and r.get('advisory')}
+    return min(advisories, key=advisory_key) if advisories else '-'
 
 try:
     data = json.load(open(sys.argv[1]))
 except json.JSONDecodeError as e:
     print(f'Error: Invalid JSON response - {e}', file=sys.stderr)
-    data = []
+    sys.exit(1)
 
 # Convert to list if needed
 if isinstance(data, dict):
-    vulns = data.get('data', []) if 'data' in data else []
-elif isinstance(data, list):
-    vulns = data
-else:
-    vulns = []
+    data = data.get('data', [])
+if not isinstance(data, list):
+    print(f'Error: Unexpected API response type {type(data).__name__}', file=sys.stderr)
+    sys.exit(1)
+vulns = data
+if not vulns:
+    print(f'[!] Warning: the API returned no CVEs for OpenShift {version} - check that this version exists', file=sys.stderr)
+elif len(vulns) >= 1000:
+    print('[!] Warning: 1000 results returned, output may be truncated (get_vulnerabilities.py paginates)', file=sys.stderr)
 
 # Filter by severity
 if severity_filter:
@@ -297,17 +303,16 @@ if advisory_prefixes:
 
 # Output in requested format
 if output_format == 'csv':
-    writer = csv.DictWriter(sys.stdout, fieldnames=['CVE', 'severity', 'public_date', 'bugzilla_id', 'impact', 'advisories'])
+    writer = csv.DictWriter(sys.stdout, fieldnames=['CVE', 'severity', 'public_date', 'bugzilla', 'description', 'advisories'])
     writer.writeheader()
     for vuln in vulns:
-        advisories = vuln.get('advisories') or []
         writer.writerow({
             'CVE': vuln.get('CVE', ''),
             'severity': vuln.get('severity', ''),
             'public_date': vuln.get('public_date', ''),
-            'bugzilla_id': vuln.get('bugzilla_id', ''),
-            'impact': vuln.get('impact', ''),
-            'advisories': ';'.join(advisories)
+            'bugzilla': vuln.get('bugzilla', ''),
+            'description': vuln.get('bugzilla_description', ''),
+            'advisories': ';'.join(vuln.get('advisories') or [])
         })
 elif output_format == 'json':
     print(json.dumps({
@@ -317,34 +322,32 @@ elif output_format == 'json':
         'source': 'Red Hat Security Advisory API'
     }, indent=2))
 else:  # table
+    print()
+    print('═' * 100)
+    print(f'OpenShift {version} - Vulnerabilities Report')
+    print('═' * 100)
+    print()
     if not vulns:
-        print()
-        print('═' * 100)
-        print(f'OpenShift {version} - Vulnerabilities Report')
-        print('═' * 100)
-        print()
         print('No vulnerabilities found for the specified criteria.')
         print()
     else:
-        print()
-        print('═' * 100)
-        print(f'OpenShift {version} - Vulnerabilities Report')
-        print('═' * 100)
-        print()
-        print(f"{'CVE ID':<15} {'Severity':<12} {'Fixed In':<10} {'Date':<12} {'Impact':<20} {'Advisories':<35}")
+        print(f'[*] Fetching fix status for {len(vulns)} CVEs...', file=sys.stderr)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            details = list(pool.map(fetch_detail, [v.get('CVE', '') for v in vulns]))
+
+        fix_header = f'Fix ({version})'
+        print(f"{'CVE ID':<16} {'Severity':<10} {fix_header:<17} {'Date':<11} {'Description'}")
         print('-' * 130)
-        
-        for vuln in vulns:
+        for vuln, detail in zip(vulns, details):
             cve = vuln.get('CVE', 'N/A')
             severity = vuln.get('severity', 'N/A').upper()
-            date = vuln.get('public_date', 'N/A')[:10]
-            impact = vuln.get('impact', 'N/A')[:18]
-            fixed_in = get_fixed_version(cve)
-            advisories = ";".join(vuln.get('advisories') or [])[:33]
-            print(f"{cve:<15} {severity:<12} {fixed_in:<10} {date:<12} {impact:<20} {advisories:<35}")
-        
+            date = (vuln.get('public_date') or 'N/A')[:10]
+            description = (vuln.get('bugzilla_description') or '')[:70]
+            print(f"{cve:<16} {severity:<10} {fix_advisory(detail):<17} {date:<11} {description}")
+
         print()
         print(f'Total: {len(vulns)} vulnerabilities found')
+        print(f"Fix ({version}): advisory fixing the CVE in this stream; '-' = no fix listed, '?' = lookup failed")
         print()
 PY
     rm -f "$tmpf"

@@ -107,29 +107,34 @@ Example scenario:
 
 ## Output Formats
 
-### Table Format (Default - with Fixed Version Info)
+### Table Format (Default - with fix advisory)
 ```
 ════════════════════════════════════════════════════════════════════════════════════════════════════
-OpenShift 4.21 - Vulnerabilities Report
+OpenShift 4.12 - Vulnerabilities Report
 ════════════════════════════════════════════════════════════════════════════════════════════════════
 
-CVE ID          Severity     Fixed In   Date         Impact                             
-────────────────────────────────────────────────────────────────────────────────────────────────────
-CVE-2026-46300  IMPORTANT    4.12       2026-05-13T12:00:00Z N/A                
-CVE-2026-41674  IMPORTANT    4.2        2026-05-07T03:47:51Z N/A                
-CVE-2026-43284  IMPORTANT    4.12       2026-05-07T00:00:00Z N/A                
+CVE ID           Severity   Fix (4.12)        Date        Description
+----------------------------------------------------------------------------------------------------------------------------------
+CVE-2026-43037   CRITICAL   RHSA-2026:26528   2026-05-01  kernel: ip6_tunnel: clear skb2->cb[] in ip4ip6_err()
+CVE-2023-49569   CRITICAL   RHSA-2024:0832    2024-01-09  go-git: Maliciously crafted Git server replies can lead to path traver
 
-Total: 27 vulnerabilities found
+Total: 2 vulnerabilities found
+Fix (4.12): advisory fixing the CVE in this stream; '-' = no fix listed, '?' = lookup failed
 ```
 
-**New Feature:** The "Fixed In" column shows the earliest OpenShift version where the vulnerability is fixed, helping you determine which upgrade resolves the issue.
+The **"Fix (X.Y)"** column shows the earliest Red Hat advisory that fixes the CVE in the requested stream
+(from the CVE's `affected_release` data). `-` means Red Hat lists no fix for that stream, `?` means the
+per-CVE lookup failed. The API does not expose the exact z-stream (e.g. 4.12.x) a fix shipped in; look up the
+advisory to find it.
+
+> **Note:** the product query returns every CVE associated with the version, **including ones already fixed**.
+> Treat the list as "CVEs relevant to 4.12", not "open vulnerabilities". Also, a CVE's `advisories` list covers
+> all Red Hat products, so `--advisory-prefix` matches advisories from any product, not only this stream.
 
 ### CSV Format
 ```csv
-CVE,severity,public_date,bugzilla_id,impact
-CVE-2026-46300,important,2026-05-13T12:00:00Z,,
-CVE-2026-41674,important,2026-05-07T03:47:51Z,,
-CVE-2026-43284,important,2026-05-07T00:00:00Z,,
+CVE,severity,public_date,bugzilla,description,advisories
+CVE-2026-43037,critical,2026-05-01T00:00:00Z,2464351,kernel: ip6_tunnel: clear skb2->cb[] in ip4ip6_err(),RHSA-2026:28741;RHSA-2026:28742;...
 ```
 
 ### JSON Format
@@ -142,8 +147,10 @@ CVE-2026-43284,important,2026-05-07T00:00:00Z,,
       "CVE": "CVE-2026-46300",
       "severity": "important",
       "public_date": "2026-05-13T12:00:00Z",
-      "bugzilla_id": "2477015",
-      "impact": "N/A"
+      "advisories": ["RHSA-2026:21695", "..."],
+      "bugzilla": "2477015",
+      "bugzilla_description": "kernel: ...",
+      "resource_url": "https://access.redhat.com/hydra/rest/securitydata/cve/CVE-2026-46300.json"
     }
   ],
   "source": "Red Hat Security Advisory API"
@@ -178,10 +185,12 @@ The scripts fetch data from:
 |---------|------|--------|----------|
 | Table output | ✓ | ✓ | ✓ |
 | CSV output | ✓ | ✓ | ✓ |
-| JSON output | ✓ | ✓ | ✗ |
+| JSON output | ✓ | ✓ | ✓ |
 | Statistics | ✗ | ✓ | ✗ |
 | Severity filter | ✓ | ✓ | ✗ |
-| Speed | Fast | Fast | Fastest |
+| Fix advisory column | ✓ | ✓ | ✗ |
+| Pagination (>1000 CVEs) | ✗ (warns) | ✓ | ✗ |
+| Speed | Table ~10s | Table ~10s | ~1s |
 | jq required | ✗ | ✗ | Optional |
 
 ## Version Format
@@ -189,12 +198,12 @@ The scripts fetch data from:
 The scripts expect version format: **X.Y** (e.g., `4.21`, `4.20`, `4.19`)
 
 Do NOT use:
-- ❌ `4.21.0` (with patch version)
+- ❌ `4.21` (with patch version)
 - ❌ `4.21.x` (with wildcard)
 
 ## Requirements
 
-- Bash 4.0+ (for bash scripts)
+- Bash 3.2+ (for bash scripts; macOS default bash works)
 - Python 3.6+ (for Python script)
 - `curl` (for API calls)
 - Optional: `jq` (for advanced bash script, has fallback)
@@ -202,7 +211,7 @@ Do NOT use:
 ## Exit Codes
 
 - `0`: Successful execution
-- `1`: Invalid version format or error
+- `1`: Invalid arguments, or the Red Hat API could not be reached / returned invalid data
 
 ## Common Tasks
 
