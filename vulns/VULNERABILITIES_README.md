@@ -9,7 +9,7 @@ A comprehensive bash/Python solution to query **real vulnerabilities** affecting
 ✅ **Fixed Release per CVE** - The OpenShift release (e.g. 4.12.92) and advisory that fix each CVE  
 ✅ **Fix Status** - Affected / Fix deferred / Will not fix... for CVEs not fixed yet (`--include-unfixed`)  
 ✅ **Severity Filtering** - Filter by critical, important, moderate, low  
-✅ **Version Validation** - Enforces correct version format (X.Y)  
+✅ **Release Check** - Give a full release (e.g. 4.21.17) to see which CVEs it is still exposed to  
 ✅ **Fast Performance** - Results in seconds  
 ✅ **Cross-platform** - Works on Linux and macOS  
 ✅ **Three Entry Points** - Python (all logic), Bash wrapper (positional args), jq-based quick lister  
@@ -92,6 +92,40 @@ Example scenario:
 # Skip the fix lookups when you only need the CVE list (faster)
 ./get_vulnerabilities.py 4.12 --format csv --no-fix
 ```
+
+### Check a specific release (e.g. 4.21.17)
+
+Give the full release instead of the stream to see which CVEs your cluster is still exposed to:
+
+```bash
+./get_vulnerabilities.sh 4.21.17                      # table, most urgent first
+./get_vulnerabilities.sh 4.21.17 csv important > exposure_4.21.17.csv
+./get_vulnerabilities.py 4.21.17 --format stats       # counts + minimum upgrade
+./get_vulnerabilities.py 4.21.17 --include-unfixed    # also CVEs with no fix yet (slow)
+```
+
+```
+CVE ID           Severity   In 4.21.17           Fixed In / Status    Advisory         Date        Description
+CVE-2026-84394   IMPORTANT  VULNERABLE           4.21.34              RHSA-2026:68547  2026-09-02  fast-uri: fast-uri: Host confusion via unbalanced U
+CVE-2026-84292   IMPORTANT  VULNERABLE           4.21.34              RHSA-2026:68547  2026-09-02  fast-uri: fast-uri: Authority Injection via Unvalid
+CVE-2026-46300   IMPORTANT  Not vulnerable       4.21.17              RHBA-2026:20032  2026-05-13  kernel: "Fragnesia" is a variant of Dirty Frag vuln
+CVE-2026-41674   IMPORTANT  Not vulnerable       4.21.17              RHSA-2026:20034  2026-05-07  xmldom: xmldom: Arbitrary XML markup injection
+...
+In 4.21.17: VULNERABLE: 99, Not vulnerable: 19
+Upgrade to 4.21.34 or later to get all available fixes
+```
+
+The **In 4.21.17** column (`version_status` in CSV/JSON):
+
+| Value | Meaning |
+|-------|---------|
+| `VULNERABLE` | Fixed in a later release; **Fixed In** is the release to upgrade to |
+| `Not vulnerable` | The fix shipped in this release or an earlier one |
+| `Vulnerable (no fix)` | No fix in this stream yet (Affected / Fix deferred / Will not fix; with `--include-unfixed`) |
+| `Unknown` | The fixing release could not be determined (e.g. `Fixed (see adv.)`), or under investigation |
+
+The data is still fetched for the whole stream (4.21). "VULNERABLE" means the fix came after your release;
+Red Hat does not publish whether an individual earlier release actually shipped the vulnerable code.
 
 ### Filter by Severity
 
@@ -235,11 +269,10 @@ The scripts fetch data from:
 
 ## Version Format
 
-The scripts expect version format: **X.Y** (e.g., `4.21`, `4.20`, `4.19`)
+- **X.Y** (e.g. `4.21`, `4.12`): list the CVEs of that stream, with the release that fixes each one
+- **X.Y.Z** (e.g. `4.21.17`): same, plus whether each CVE is fixed in that exact release
 
-Do NOT use:
-- ❌ `4.21` (with patch version)
-- ❌ `4.21.x` (with wildcard)
+Not supported: `4.21.x` (wildcards) or 4-part versions.
 
 ## Requirements
 

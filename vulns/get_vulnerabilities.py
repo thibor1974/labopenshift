@@ -23,6 +23,10 @@ ERRATA_BASE = "https://access.redhat.com/errata"
 # When a CVE has no fix in the stream, the most actionable package state wins
 FIX_STATE_PRIORITY = ['Affected', 'Fix deferred', 'Under investigation', 'Will not fix',
                       'Out of support scope', 'Not affected']
+# Unfixed states that mean the stream ships the vulnerable code
+UNFIXED_STATES = {'Affected', 'Fix deferred', 'Will not fix', 'Out of support scope'}
+# version_status values (full release given, e.g. 4.21.17), most urgent first
+VERSION_STATUS_ORDER = ['VULNERABLE', 'Vulnerable (no fix)', 'Unknown', 'Not vulnerable']
 
 
 class FetchError(Exception):
@@ -40,9 +44,9 @@ class VulnerabilityScanner:
         self.per_page = 1000
 
     def validate_version(self, version: str) -> bool:
-        """Validate version format (e.g., 4.21, 4.12)"""
+        """Validate version format: stream (e.g. 4.21) or full release (e.g. 4.21.17)"""
         parts = version.split('.')
-        if len(parts) != 2:
+        if len(parts) not in (2, 3):
             return False
         return all(part.isdigit() for part in parts)
 
@@ -218,6 +222,35 @@ class VulnerabilityScanner:
         for vuln, info in zip(vulns, infos):
             vuln.update(info)
 
+    def add_version_status(self, vulns: List[Dict], release: str):
+        """For a full release (e.g. 4.21.17), set version_status on each vulnerability:
+          'Not vulnerable'      - fixed in this release or an earlier one
+          'VULNERABLE'          - fixed in a later release (fixed_in is the upgrade target)
+          'Vulnerable (no fix)' - no fix in this stream (Affected, Fix deferred, Will not fix, ...)
+          'Unknown'             - fixing release could not be determined, or status unclear"""
+        release_key = self._version_key(release)
+        for vuln in vulns:
+            status = vuln.get('fix_status', '')
+            fixed_in = vuln.get('fixed_in', '')
+            if status == 'Fixed' and fixed_in:
+                vulnerable = self._version_key(fixed_in) > release_key
+                vuln['version_status'] = 'VULNERABLE' if vulnerable else 'Not vulnerable'
+            elif status in UNFIXED_STATES:
+                vuln['version_status'] = 'Vulnerable (no fix)'
+            else:
+                vuln['version_status'] = 'Unknown'
+
+    def _version_summary(self, vulns: List[Dict]) -> List[str]:
+        """Summary lines for version_status: counts and the minimum upgrade fixing all fixable CVEs"""
+        counts = {}
+        for vuln in vulns:
+            counts[vuln['version_status']] = counts.get(vuln['version_status'], 0) + 1
+        lines = [", ".join(f"{s}: {counts[s]}" for s in VERSION_STATUS_ORDER if s in counts)]
+        targets = [v['fixed_in'] for v in vulns if v['version_status'] == 'VULNERABLE']
+        if targets:
+            lines.append(f"Upgrade to {max(targets, key=self._version_key)} or later to get all available fixes")
+        return lines
+
     def _fix_display(self, vuln: Dict) -> Tuple[str, str]:
         """(Fixed In / Status, Advisory) cells for the table"""
         status = vuln.get('fix_status', '')
@@ -239,8 +272,12 @@ class VulnerabilityScanner:
             output.append("")
             return "\n".join(output)
 
-        output.append(f"{'CVE ID':<16} {'Severity':<10} {'Fixed In / Status':<20} {'Advisory':<16} {'Date':<11} {'Description'}")
-        output.append("-" * 140)
+        # Extra column when a full release (e.g. 4.21.17) was given
+        with_release = any('version_status' in v for v in vulns)
+        release_header = f"{'In ' + version:<20} " if with_release else ""
+
+        output.append(f"{'CVE ID':<16} {'Severity':<10} {release_header}{'Fixed In / Status':<20} {'Advisory':<16} {'Date':<11} {'Description'}")
+        output.append("-" * (161 if with_release else 140))
 
         # Rows
         for vuln in vulns:
@@ -249,8 +286,9 @@ class VulnerabilityScanner:
             date = (vuln.get('public_date') or 'N/A')[:10]  # Truncate to just date
             description = (vuln.get('bugzilla_description') or '')[:60]
             fixed_in, advisory = self._fix_display(vuln)
+            release_cell = f"{vuln.get('version_status', ''):<20} " if with_release else ""
 
-            output.append(f"{cve:<16} {severity:<10} {fixed_in:<20} {advisory:<16} {date:<11} {description}")
+            output.append(f"{cve:<16} {severity:<10} {release_cell}{fixed_in:<20} {advisory:<16} {date:<11} {description}")
 
         output.append("")
         output.append(f"Total: {len(vulns)} vulnerabilities found")
@@ -259,6 +297,10 @@ class VulnerabilityScanner:
             for vuln in vulns:
                 counts[vuln['fix_status']] = counts.get(vuln['fix_status'], 0) + 1
             output.append("Fix status: " + ", ".join(f"{s}: {n}" for s, n in sorted(counts.items(), key=lambda x: -x[1])))
+        if with_release:
+            summary = self._version_summary(vulns)
+            output.append(f"In {version}: {summary[0]}")
+            output.extend(summary[1:])
         output.append("")
 
         return "\n".join(output)
@@ -269,8 +311,8 @@ class VulnerabilityScanner:
         import io
 
         output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=['CVE', 'severity', 'public_date', 'fix_status', 'fixed_in',
-                                                    'fix_advisory', 'bugzilla', 'description', 'advisories'])
+        writer = csv.DictWriter(output, fieldnames=['CVE', 'severity', 'public_date', 'version_status', 'fix_status',
+                                                    'fixed_in', 'fix_advisory', 'bugzilla', 'description', 'advisories'])
         writer.writeheader()
 
         for vuln in vulns:
@@ -278,6 +320,7 @@ class VulnerabilityScanner:
                 'CVE': vuln.get('CVE', ''),
                 'severity': (vuln.get('severity') or ''),
                 'public_date': vuln.get('public_date', ''),
+                'version_status': vuln.get('version_status', ''),
                 'fix_status': vuln.get('fix_status', ''),
                 'fixed_in': vuln.get('fixed_in', ''),
                 'fix_advisory': vuln.get('fix_advisory', ''),
@@ -292,6 +335,7 @@ class VulnerabilityScanner:
         """Format as JSON"""
         data = {
             "version": version,
+            "stream": '.'.join(version.split('.')[:2]),
             "count": len(vulns),
             "vulnerabilities": vulns,
             "generated": datetime.now().isoformat(),
@@ -329,6 +373,13 @@ class VulnerabilityScanner:
                 output.append("By Fix Status:")
                 for status, count in sorted(status_counts.items(), key=lambda x: -x[1]):
                     output.append(f"  {status}: {count}")
+
+            if any('version_status' in v for v in vulns):
+                summary = self._version_summary(vulns)
+                output.append("")
+                output.append(f"In {version}:")
+                output.extend(f"  {part}" for part in summary[0].split(", "))
+                output.extend(summary[1:])
 
         output.append("")
         return "\n".join(output)
@@ -429,6 +480,7 @@ def main():
         epilog='''
 Examples:
   %(prog)s 4.21                          # List all vulnerabilities
+  %(prog)s 4.21.17                       # Same, plus: is each CVE fixed in 4.21.17?
   %(prog)s 4.12 --severity critical      # List critical vulnerabilities only
   %(prog)s 4.12 --format csv             # Export as CSV
   %(prog)s 4.12 --format json            # Export as JSON
@@ -439,7 +491,7 @@ Examples:
         '''
     )
 
-    parser.add_argument('version', nargs='?', default=None, help='OpenShift version (e.g., 4.21, 4.12)')
+    parser.add_argument('version', nargs='?', default=None, help='OpenShift version: stream (e.g. 4.21) or full release (e.g. 4.21.17)')
     parser.add_argument(
         '--cve',
         help='Lookup details for a specific CVE (e.g., CVE-2025-1234)'
@@ -500,17 +552,24 @@ Examples:
     scanner = VulnerabilityScanner()
     if not scanner.validate_version(args.version):
         print(f"Error: Invalid version format '{args.version}'", file=sys.stderr)
-        print("Use format like: 4.21 or 4.12", file=sys.stderr)
+        print("Use format like: 4.21 or 4.21.17", file=sys.stderr)
         sys.exit(1)
+
+    # A full release (4.21.17) queries its stream (4.21), then checks each CVE against the release
+    stream = '.'.join(args.version.split('.')[:2])
+    release = args.version if args.version != stream else None
+    if release and args.no_fix:
+        print(f"[!] Warning: --no-fix skips the fix lookups, so CVEs cannot be checked against {release}",
+              file=sys.stderr)
 
     # Fetch vulnerabilities
     try:
-        vulns = scanner.fetch_vulnerabilities(args.version)
+        vulns = scanner.fetch_vulnerabilities(stream)
     except FetchError as e:
         print(f"[!] Failed to fetch vulnerabilities: {e}", file=sys.stderr)
         sys.exit(1)
     if not vulns:
-        print(f"[!] Warning: the API returned no CVEs for OpenShift {args.version} "
+        print(f"[!] Warning: the API returned no CVEs for OpenShift {stream} "
               "- check that this version exists", file=sys.stderr)
 
     # Filter by severity and advisory prefixes (e.g., RHSA,RHBA)
@@ -525,18 +584,23 @@ Examples:
     vulns = [v for v in vulns if keep(v)]
 
     # Fixed-in release / fix status per CVE for the requested stream
-    if (args.format != 'stats' or args.include_unfixed) and not args.no_fix:
-        scanner.add_fix_info(vulns, args.version)
+    if (args.format != 'stats' or args.include_unfixed or release) and not args.no_fix:
+        scanner.add_fix_info(vulns, stream)
 
     # Optionally add CVEs not fixed in this stream (Affected, Fix deferred, Will not fix, ...)
     if args.include_unfixed:
         try:
-            vulns += scanner.find_unfixed(args.version, known_cves, keep)
+            vulns += scanner.find_unfixed(stream, known_cves, keep)
         except FetchError as e:
             print(f"[!] Failed to fetch unfixed vulnerabilities: {e}", file=sys.stderr)
             sys.exit(1)
 
     vulns = scanner.sort_vulnerabilities(vulns)
+
+    # Full release given: is each CVE fixed in it? Most urgent first (sort is stable, severity kept within)
+    if release and not args.no_fix:
+        scanner.add_version_status(vulns, release)
+        vulns.sort(key=lambda v: VERSION_STATUS_ORDER.index(v['version_status']))
 
     # Format output
     if args.format == 'csv':

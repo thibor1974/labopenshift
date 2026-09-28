@@ -112,6 +112,40 @@ Fixed in OpenShift Container Platform:
 ./get_vulnerabilities.py 4.12 --format csv --no-fix
 ```
 
+### Check a specific release (e.g. 4.21.17)
+
+Give the full release instead of the stream to see which CVEs your cluster is still exposed to:
+
+```bash
+./get_vulnerabilities.sh 4.21.17                      # table, most urgent first
+./get_vulnerabilities.sh 4.21.17 csv important > exposure_4.21.17.csv
+./get_vulnerabilities.py 4.21.17 --format stats       # counts + minimum upgrade
+./get_vulnerabilities.py 4.21.17 --include-unfixed    # also CVEs with no fix yet (slow)
+```
+
+```
+CVE ID           Severity   In 4.21.17           Fixed In / Status    Advisory         Date        Description
+CVE-2026-84394   IMPORTANT  VULNERABLE           4.21.34              RHSA-2026:68547  2026-09-02  fast-uri: fast-uri: Host confusion via unbalanced U
+CVE-2026-84292   IMPORTANT  VULNERABLE           4.21.34              RHSA-2026:68547  2026-09-02  fast-uri: fast-uri: Authority Injection via Unvalid
+CVE-2026-46300   IMPORTANT  Not vulnerable       4.21.17              RHBA-2026:20032  2026-05-13  kernel: "Fragnesia" is a variant of Dirty Frag vuln
+CVE-2026-41674   IMPORTANT  Not vulnerable       4.21.17              RHSA-2026:20034  2026-05-07  xmldom: xmldom: Arbitrary XML markup injection
+...
+In 4.21.17: VULNERABLE: 99, Not vulnerable: 19
+Upgrade to 4.21.34 or later to get all available fixes
+```
+
+The **In 4.21.17** column (`version_status` in CSV/JSON):
+
+| Value | Meaning |
+|-------|---------|
+| `VULNERABLE` | Fixed in a later release; **Fixed In** is the release to upgrade to |
+| `Not vulnerable` | The fix shipped in this release or an earlier one |
+| `Vulnerable (no fix)` | No fix in this stream yet (Affected / Fix deferred / Will not fix; with `--include-unfixed`) |
+| `Unknown` | The fixing release could not be determined (e.g. `Fixed (see adv.)`), or under investigation |
+
+The data is still fetched for the whole stream (4.21). "VULNERABLE" means the fix came after your release;
+Red Hat does not publish whether an individual earlier release actually shipped the vulnerable code.
+
 ## Complete Usage Examples
 
 ### Example 2: Export important vulnerabilities as CSV

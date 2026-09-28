@@ -11,7 +11,8 @@
 # keeping the positional-argument interface.
 #
 # Arguments:
-#   version   - OpenShift version (e.g., 4.12, 4.21) - REQUIRED
+#   version   - OpenShift stream (e.g., 4.21) or full release (e.g., 4.21.17) - REQUIRED.
+#               With a full release, each CVE is also checked against it (fixed / VULNERABLE)
 #   format    - Output format: json, csv, table (default: table)
 #   severity  - Filter by severity: critical, important, moderate, low (optional)
 #
@@ -23,6 +24,7 @@
 #
 # Examples:
 #   ./get_vulnerabilities.sh 4.21
+#   ./get_vulnerabilities.sh 4.21.17 table important
 #   ./get_vulnerabilities.sh 4.12 csv
 #   ./get_vulnerabilities.sh 4.12 table critical
 #   ./get_vulnerabilities.sh --include-unfixed 4.12 csv important
@@ -41,7 +43,7 @@ usage() {
     echo "   or: $0 --cve CVE-ID"
     echo ""
     echo "Arguments:"
-    echo "  version   - OpenShift version (e.g., 4.21, 4.12)"
+    echo "  version   - OpenShift stream (e.g., 4.21) or full release (e.g., 4.21.17)"
     echo "  format    - Output format: json, csv, table (default: table)"
     echo "  severity  - Filter by severity: critical, important, moderate, low"
     echo ""
@@ -53,6 +55,7 @@ usage() {
     echo ""
     echo "Examples:"
     echo "  $0 4.21"
+    echo "  $0 4.21.17 table important"
     echo "  $0 4.12 csv"
     echo "  $0 4.12 table critical"
     echo "  $0 --include-unfixed 4.12 csv important"
@@ -101,7 +104,7 @@ version="${POSITIONAL[0]}"
 output_format="${POSITIONAL[1]:-table}"
 severity_filter="${POSITIONAL[2]:-}"
 
-[[ $version =~ ^[0-9]+\.[0-9]+$ ]] || error "Invalid version format. Use format like 4.21 or 4.12"
+[[ $version =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || error "Invalid version format. Use format like 4.21 or 4.21.17"
 case "$output_format" in
     table|csv|json) ;;
     *) error "Invalid format '${output_format}'. Use table, csv or json" ;;

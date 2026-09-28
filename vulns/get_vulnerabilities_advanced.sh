@@ -19,6 +19,7 @@ usage() {
     echo "Formats: table, csv, json"
     echo "Examples:"
     echo "  $0 4.21"
+    echo "  $0 4.21.17   (lists the 4.21 stream)"
     echo "  $0 4.12 csv"
     exit 1
 }
@@ -50,10 +51,15 @@ fi
 VERSION=${PARSED[0]}
 FORMAT=${PARSED[1]:-table}
 
-# Validate version
-if ! [[ $VERSION =~ ^[0-9]+\.[0-9]+$ ]]; then
-    echo -e "${RED}Error: Invalid version format. Use 4.21 or 4.12${NC}" >&2
+# Validate version: stream (4.21) or full release (4.21.17). The API is queried per stream;
+# this script has no fix lookups, so a full release lists the whole stream.
+if ! [[ $VERSION =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+    echo -e "${RED}Error: Invalid version format. Use 4.21 or 4.21.17${NC}" >&2
     exit 1
+fi
+if [[ $VERSION =~ ^([0-9]+\.[0-9]+)\.[0-9]+$ ]]; then
+    echo -e "[!] Note: listing all CVEs of stream ${BASH_REMATCH[1]}; use get_vulnerabilities.py ${VERSION} to check which affect ${VERSION}" >&2
+    VERSION=${BASH_REMATCH[1]}
 fi
 
 API_URL="https://access.redhat.com/hydra/rest/securitydata/cve.json?product=Red%20Hat%20OpenShift%20Container%20Platform%20${VERSION}&per_page=1000"
