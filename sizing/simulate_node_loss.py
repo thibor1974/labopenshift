@@ -418,6 +418,11 @@ class Scenario:
             rows[n.name] = tuple(pct(self.used[n.name].get(r, ZERO), n.allocatable.get(r)) for r in ("cpu", "memory"))
         return rows
 
+    def free(self):
+        """Per remaining node: allocatable - requests, for cpu and memory."""
+        return {n.name: {r: n.allocatable.get(r, ZERO) - self.used[n.name].get(r, ZERO) for r in ("cpu", "memory")}
+                for n in self.nodes}
+
 
 def pct(value, total):
     return int(value * 100 / total) if total else 0
@@ -469,7 +474,25 @@ def node_rows(nodes, pods):
                      "alloc.pods": n.allocatable.get("pods", ZERO), "pods": len(on),
                      "requests.cpu": req.get("cpu", ZERO), "requests.memory": req.get("memory", ZERO),
                      "limits.cpu": lim.get("cpu", ZERO), "limits.memory": lim.get("memory", ZERO)})
+        for r in ("cpu", "memory"):
+            rows[-1]["free." + r] = rows[-1]["alloc." + r] - rows[-1]["requests." + r]
     return rows
+
+
+def cluster_totals(rows):
+    """Sum of the node rows (every node, control plane included)."""
+    keys = [k for k in rows[0] if "." in k] if rows else []
+    totals = {k: sum((r[k] for r in rows), ZERO) for k in keys}
+    totals["pods"] = sum(r["pods"] for r in rows)
+    return totals
+
+
+def role_totals(rows):
+    """cluster_totals per role combination (e.g. master, worker, infra,worker): a node is counted once."""
+    groups = {}
+    for r in rows:
+        groups.setdefault(r["roles"], []).append(r)
+    return {role: dict(cluster_totals(g), nodes=len(g)) for role, g in sorted(groups.items())}
 
 
 def limit_text(row, resource):
@@ -501,15 +524,21 @@ def print_workloads(rows, use_color):
 def print_nodes(rows, use_color):
     print(color("=== Nodes (requests are what the scheduler reserves, limits show overcommit) ===", BLUE, use_color))
     table = []
-    for r in rows:
+    totals = [dict(t, node="TOTAL", roles=role, status="%d node(s)" % t["nodes"])
+              for role, t in role_totals(rows).items()]
+    totals.append(dict(cluster_totals(rows), node="TOTAL", roles="all", status="%d node(s)" % len(rows)))
+    for r in rows + totals:
         table.append([r["node"], r["roles"], r["status"], "%d/%d" % (r["pods"], r["alloc.pods"]),
                       "%s/%s (%d%%)" % (fmt("cpu", r["requests.cpu"]), fmt("cpu", r["alloc.cpu"]),
                                         pct(r["requests.cpu"], r["alloc.cpu"])),
-                      "%d%%" % pct(r["limits.cpu"], r["alloc.cpu"]),
+                      "%d%%" % pct(r["limits.cpu"], r["alloc.cpu"]), fmt("cpu", r["free.cpu"]),
                       "%s/%s (%d%%)" % (fmt("memory", r["requests.memory"]), fmt("memory", r["alloc.memory"]),
                                         pct(r["requests.memory"], r["alloc.memory"])),
-                      "%d%%" % pct(r["limits.memory"], r["alloc.memory"])])
-    print_table(table, ["NODE", "ROLES", "STATUS", "PODS", "REQ CPU / ALLOC", "LIM CPU", "REQ MEM / ALLOC", "LIM MEM"])
+                      "%d%%" % pct(r["limits.memory"], r["alloc.memory"]), fmt("memory", r["free.memory"])])
+    print_table(table, ["NODE", "ROLES", "STATUS", "PODS", "REQ CPU / ALLOC", "LIM CPU", "FREE CPU",
+                        "REQ MEM / ALLOC", "LIM MEM", "FREE MEM"])
+    print("  FREE = allocatable - requests: what the scheduler can still place. TOTAL <ROLES> sums the nodes with")
+    print("  exactly these roles (tainted or cordoned ones included); a pod must fit on a single node, not in a total.")
     print()
 
 
@@ -554,9 +583,21 @@ def print_simulation(scenarios, pending, verbose, use_color):
                   % ", ".join(sts))
         if verbose:
             util = s.utilisation()
-            print("  Remaining nodes after rescheduling (requested cpu% / memory%):")
+            free = s.free()
+            print("  Remaining nodes after rescheduling (requested cpu% / memory%, free cpu / memory):")
             for name, (c, m) in sorted(util.items()):
-                print("    %-40s %3d%% / %3d%%" % (name, c, m))
+                print("    %-40s %3d%% / %3d%%   %8s / %s" % (name, c, m, fmt("cpu", free[name]["cpu"]),
+                                                            fmt("memory", free[name]["memory"])))
+            by_role = {}
+            for n in s.nodes:
+                add_into(by_role.setdefault(",".join(n.roles) or "-", {}), free[n.name])
+            by_role = sorted(by_role.items())
+            by_role.append(("all", {}))
+            for f in free.values():
+                add_into(by_role[-1][1], f)
+            for role, f in by_role:
+                print("    %-40s               %8s / %s" % ("TOTAL " + role, fmt("cpu", f.get("cpu", ZERO)),
+                                                         fmt("memory", f.get("memory", ZERO))))
             if s.assigned:
                 print("  Placement of the moved pods:")
             for pod in sorted(s.displaced, key=lambda p: p.ref):
@@ -572,6 +613,8 @@ def to_json(workloads, nodes, scenarios, pending):
     return {
         "workloads": [{k: num(v) for k, v in r.items()} for r in workloads],
         "nodes": [{k: num(v) for k, v in r.items()} for r in nodes],
+        "cluster": {k: num(v) for k, v in cluster_totals(nodes).items()},
+        "roles": {role: {k: num(v) for k, v in t.items()} for role, t in role_totals(nodes).items()},
         "pending_before": [p.ref for p in pending],
         "scenarios": [{
             "lost": s.lost,
@@ -582,7 +625,9 @@ def to_json(workloads, nodes, scenarios, pending):
                                "requests": {k: num(v) for k, v in p.requests.items()}} for p, why in s.unplaced],
             "not_recreated": [p.ref for p in s.not_recreated],
             "placement": s.assigned,
-            "utilisation_after": {n: {"cpu_pct": c, "memory_pct": m} for n, (c, m) in s.utilisation().items()},
+            "utilisation_after": {n: {"cpu_pct": c, "memory_pct": m, "free_cpu": num(s.free()[n]["cpu"]),
+                                      "free_memory": num(s.free()[n]["memory"])}
+                                  for n, (c, m) in s.utilisation().items()},
         } for s in scenarios],
     }
 
