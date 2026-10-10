@@ -183,5 +183,6 @@ The API stores the "default channel" flag on each bundle when it is published, s
 
 ## Related scripts
 
+- `operator_upgrade_path.py` - OLM upgrade graph of an operator channel, and the upgrade path from an installed version ([OPERATOR_UPGRADE_PATH_README.md](OPERATOR_UPGRADE_PATH_README.md))
 - `list_versions.py` - OpenShift releases available per stream and update channel, with release dates
 - `get_vulnerabilities.py` - CVEs affecting an OpenShift version, and the release that fixes them
